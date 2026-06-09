@@ -96,21 +96,35 @@ internal static class Gate
     /// <param name="props">Path to the injected props.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>True when every linter passes.</returns>
-    private static async Task<bool> RunLintersAsync(
+    private static async Task<(int Code, bool NoDeprecated)> CSharpGateAsync(
         string root,
         string props,
         CancellationToken token
     )
     {
-        var cfg = Path.Combine(AssetsDir, "dprint.json");
-        var (code, output) = await ShAsync(
+        var hasProject = Directory
+            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Any(static f =>
+                (
+                    f.EndsWith(".csproj", StringComparison.Ordinal)
+                    || f.EndsWith(".sln", StringComparison.Ordinal)
+                )
+                && !f.Contains("/obj/", StringComparison.Ordinal)
+                && !f.Contains("/bin/", StringComparison.Ordinal)
+            );
+        if (!hasProject)
+        {
+            return (0, true);
+        }
+
+        var (buildCode, buildOutput) = await ShAsync(
                 Dotnet,
                 $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror",
                 token
             )
             .ConfigureAwait(false);
         foreach (
-            var line in output
+            var line in buildOutput
                 .Split('\n')
                 .Where(l => l.Contains(": error ", StringComparison.Ordinal))
         )
@@ -131,12 +145,21 @@ internal static class Gate
         if (!noDeprecated)
         {
             await Console
-                .Error.WriteLineAsync(
-                    "deprecated NuGet package(s) present (dotnet list package --deprecated)".AsMemory(),
-                    token
-                )
+                .Error.WriteLineAsync("deprecated NuGet package(s) present".AsMemory(), token)
                 .ConfigureAwait(false);
         }
+
+        return (buildCode, noDeprecated);
+    }
+
+    private static async Task<bool> RunLintersAsync(
+        string root,
+        string props,
+        CancellationToken token
+    )
+    {
+        var cfg = Path.Combine(AssetsDir, "dprint.json");
+        var (code, noDeprecated) = await CSharpGateAsync(root, props, token).ConfigureAwait(false);
 
         var fileTypesOk = await Linters.CheckAsync(root, cfg, token).ConfigureAwait(false);
         var offenders = await Transform.OffendersAsync(root, token).ConfigureAwait(false);
