@@ -1,0 +1,30 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/obj",
+      "!**/bin",
+      "!**/node_modules",
+      "!**/vendor/**",
+      "!**/lib/**",
+      "!**/*.min.*",
+      "!**/wwwroot/lib/**"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": { "recommended": true },
+      "complexity": { "recommended": true },
+      "correctness": { "recommended": true },
+      "performance": { "recommended": true },
+      "security": { "recommended": true },
+      "style": { "recommended": true },
+      "suspicious": { "recommended": true },
+      "nursery": { "recommended": true }
+    }
+  },
+  "assist": { "enabled": true }
+}

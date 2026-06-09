@@ -16,6 +16,8 @@ internal static class Linters
         "--external-sources",
     ];
     private static readonly string[] XmlNoOut = ["--noout"];
+    private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
+
     private static string MarkdownConfig =>
         Path.Combine(AppContext.BaseDirectory, "assets", ".markdownlint.jsonc");
     private static string YamlConfig =>
@@ -121,11 +123,36 @@ internal static class Linters
             (HasFiles(root, "*.toml"), "taplo", ["lint"]),
             (DockerFiles(root).Length > 0, "hadolint", DockerFiles(root)),
             (XmlFiles(root).Length > 0, "xmllint", [.. XmlNoOut, .. XmlFiles(root)]),
+            (
+                WebFiles(root),
+                "biome",
+                fix
+                    ? ["check", "--write", "--config-path", AssetsDir, "."]
+                    : ["check", "--config-path", AssetsDir, "."]
+            ),
         };
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
             yield return (exe, args);
         }
+    }
+
+    private static bool WebFiles(string root)
+    {
+        string[] ext =
+        [
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".css",
+            ".scss",
+            ".html",
+            ".graphql",
+        ];
+        return Files(root).Any(f => ext.Contains(Path.GetExtension(f), StringComparer.Ordinal));
     }
 
     private static string[] DockerFiles(string root)
