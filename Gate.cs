@@ -22,7 +22,10 @@ internal static class Gate
             Autofix(root, props);
         }
 
-        var (code, output) = Sh("dotnet", $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror");
+        var (code, output) = Sh(
+            "dotnet",
+            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror"
+        );
         if (code == 0)
         {
             Console.Out.WriteLine("ok");
@@ -60,7 +63,13 @@ internal static class Gate
             _ = Sh("typos", "--write-changes");
             _ = Sh("git", "add -A");
             // analyzer code-fixes: keep if build stays green, else revert just this fixer to last-good
-            foreach (var fx in new[] { "format style --severity info", "format analyzers --severity info" })
+            foreach (
+                var fx in new[]
+                {
+                    "format style --severity info",
+                    "format analyzers --severity info",
+                }
+            )
             {
                 _ = Sh("dotnet", fx);
                 if (Sh("dotnet", "build -c Release").Code == 0)
@@ -70,7 +79,9 @@ internal static class Gate
                 else
                 {
                     _ = Sh("git", "checkout -- .");
-                    Console.Error.WriteLine($"lintmax-cs: '{fx}' broke the build; skipped (hand-fix).");
+                    Console.Error.WriteLine(
+                        $"lintmax-cs: '{fx}' broke the build; skipped (hand-fix)."
+                    );
                 }
             }
         }
