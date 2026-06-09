@@ -323,3 +323,6 @@ dotnet_diagnostic.RCS1231.severity = none
 dotnet_diagnostic.S1309.severity = none
 # RCS1223 (mark every type with [DebuggerDisplay]) is cosmetic debugger-UX, off-by-default-for-reason -> earned-disable
 dotnet_diagnostic.RCS1223.severity = none
+# CA1062 (validate public args) is a PUBLIC-contract concern; api_surface=all over-extends it to private methods
+# (internal callers control args) forcing guard+local-async ceremony with no benefit -> scope to public surface only.
+dotnet_code_quality.CA1062.api_surface = public
