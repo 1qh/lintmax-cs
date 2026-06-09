@@ -10,6 +10,7 @@
     <LangVersion>latest</LangVersion>
     <MeziantouAnalysisMode>all-errors</MeziantouAnalysisMode>
     <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <EnableReferenceTrimmer>true</EnableReferenceTrimmer>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
@@ -32,6 +33,9 @@
     />
     <PackageReference Include="IDisposableAnalyzers" Version="*" PrivateAssets="all" />
     <PackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="*-*" PrivateAssets="all" />
+    <PackageReference Include="ErrorProne.NET.Structs" Version="*-*" PrivateAssets="all" />
+    <PackageReference Include="AsyncFixer" Version="*" PrivateAssets="all" />
+    <PackageReference Include="ReferenceTrimmer" Version="*" PrivateAssets="all" />
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)lintmax.globalconfig" />
   </ItemGroup>
 </Project>

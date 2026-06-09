@@ -80,6 +80,7 @@ internal static class Linters
     )
     {
         yield return ("editorconfig-checker", ["."]);
+        yield return ("gitleaks", ["dir", "."]);
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
         yield return ("dprint", [fix ? "fmt" : "check", "--config", dprintConfig]);
         var shell = ShellFiles(root);

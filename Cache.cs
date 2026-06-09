@@ -69,11 +69,11 @@ internal static class Cache
     /// <param name="hash">The green tree hash.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    internal static async Task StoreGreenAsync(string root, string hash, CancellationToken token)
+    internal static Task StoreGreenAsync(string root, string hash, CancellationToken token)
     {
         var path = CachePath(root);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllTextAsync(path, hash, token).ConfigureAwait(false);
+        return File.WriteAllTextAsync(path, hash, token);
     }
 
     private static bool IsTracked(string f)
