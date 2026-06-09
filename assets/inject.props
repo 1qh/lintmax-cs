@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>All</AnalysisMode>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningLevel>9999</WarningLevel>
+    <LangVersion>latest</LangVersion>
+    <MeziantouAnalysisMode>all-errors</MeziantouAnalysisMode>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Roslynator.Analyzers" Version="*" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Formatting.Analyzers" Version="*" PrivateAssets="all" />
+    <PackageReference Include="Meziantou.Analyzer" Version="*" PrivateAssets="all" />
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="*" PrivateAssets="all" />
+    <PackageReference Include="StyleCop.Analyzers" Version="*-*" PrivateAssets="all" />
+    <PackageReference
+      Include="Microsoft.VisualStudio.Threading.Analyzers"
+      Version="*"
+      PrivateAssets="all"
+    />
+    <PackageReference
+      Include="Microsoft.CodeAnalysis.BannedApiAnalyzers"
+      Version="*-*"
+      PrivateAssets="all"
+    />
+    <PackageReference Include="IDisposableAnalyzers" Version="*" PrivateAssets="all" />
+    <PackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="*-*" PrivateAssets="all" />
+    <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)lintmax.globalconfig" />
+  </ItemGroup>
+</Project>

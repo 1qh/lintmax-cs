@@ -1,0 +1,4 @@
+bin/
+obj/
+*.lintmaxbak
+Directory.Build.props
