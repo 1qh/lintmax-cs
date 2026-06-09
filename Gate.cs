@@ -1,118 +1,106 @@
-// <copyright file="Gate.cs" company="PlaceholderCompany">
-// Copyright (c) PlaceholderCompany. All rights reserved.
-// </copyright>
+using System.Diagnostics;
 
-/*
- * <Your-Product-Name>
- * Copyright (c) <Year-From>-<Year-To> <Your-Company-Name>
- *
- * Please configure this header in your SonarCloud/SonarQube quality profile.
- * You can also set it in SonarLint.xml additional file for SonarLint or standalone NuGet analyzer.
- */
+namespace LintmaxCs;
 
-namespace LintmaxCs
+/// <summary>Runs the configless max-strict gate against the current directory.</summary>
+internal static class Gate
 {
-    using System.Diagnostics;
+    private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
 
-    internal static class Gate
+    /// <summary>Runs the gate; when <paramref name="fix"/> is true, autofixes first.</summary>
+    public static int Run(bool fix)
     {
-        private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
-
-        public static int Run(bool fix)
+        var root = Directory.GetCurrentDirectory();
+        var props = Path.Combine(AssetsDir, "inject.props");
+        if (!File.Exists(props))
         {
-            string root = Directory.GetCurrentDirectory();
-            string props = Path.Combine(AssetsDir, "inject.props");
-            if (!File.Exists(props))
+            return Fail($"assets missing: {props}");
+        }
+
+        if (fix)
+        {
+            Autofix(root, props);
+        }
+
+        var (code, output) = Sh("dotnet", $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror");
+        if (code == 0)
+        {
+            Console.Out.WriteLine("ok");
+            return 0;
+        }
+
+        foreach (var line in output.Split('\n'))
+        {
+            if (line.Contains(": error ", StringComparison.Ordinal))
             {
-                return Fail($"assets missing: {props}");
+                Console.Error.WriteLine(line.Trim());
             }
+        }
 
-            if (fix)
+        return 1;
+    }
+
+    private static void Autofix(string root, string props)
+    {
+        var dbp = Path.Combine(root, "Directory.Build.props");
+        var had = File.Exists(dbp);
+        var bak = dbp + ".lintmaxbak";
+        if (had)
+        {
+            File.Move(dbp, bak, overwrite: true);
+        }
+
+        File.WriteAllText(dbp, $"<Project><Import Project=\"{props}\" /></Project>");
+        try
+        {
+            _ = Sh("dotnet", "restore");
+            _ = Sh("csharpier", "format .");
+            _ = Sh("dprint", "fmt");
+            _ = Sh("typos", "--write-changes");
+            foreach (var fx in new[] { "format style --severity info", "format analyzers --severity info" })
             {
-                // inject analyzers+config so `dotnet format` applies analyzer code-fixes (temp Directory.Build.props)
-                string tempDbp = Path.Combine(root, "Directory.Build.props");
-                bool hadDbp = File.Exists(tempDbp);
-                string backup = tempDbp + ".lintmaxbak";
-                if (hadDbp)
-                {
-                    File.Move(tempDbp, backup, overwrite: true);
-                }
-
-                File.WriteAllText(tempDbp, $"<Project><Import Project=\"{props}\" /></Project>");
-                try
-                {
-                    _ = Sh("dotnet", "restore");
-                    _ = Sh("dotnet", "format style --severity info");
-                    _ = Sh("dotnet", "format analyzers --severity info");
-                    _ = Sh("csharpier", "format .");
-                    _ = Sh("dprint", "fmt");
-                    _ = Sh("typos", "--write-changes");
-                }
-                finally
-                {
-                    File.Delete(tempDbp);
-                    if (hadDbp)
-                    {
-                        File.Move(backup, tempDbp, overwrite: true);
-                    }
-                }
-
-                var (vcode, _) = Sh("dotnet", "build -c Release");
-                if (vcode != 0)
+                _ = Sh("dotnet", fx);
+                if (Sh("dotnet", "build -c Release").Code != 0)
                 {
                     _ = Sh("git", "checkout -- .");
-                    Console.Error.WriteLine("lintmax-cs: autofix broke the build; reverted. fix findings by hand.");
-                    return 1;
+                    Console.Error.WriteLine($"lintmax-cs: '{fx}' broke the build; skipped (hand-fix).");
                 }
             }
-
-            // gate = child-process build with configless injection (consumer untouched)
-            (int code, string? output) = Sh(
-                "dotnet",
-                $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -p:TreatWarningsAsErrors=true -warnaserror"
-            );
-            if (code is 0)
-            {
-                Console.Out.WriteLine("ok");
-                return 0;
-            }
-
-            foreach (string line in output.Split('\n'))
-            {
-                if (line.Contains(": error ", StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine(line.Trim());
-                }
-            }
-
-            return 1;
         }
-
-        private static (int, string) Sh(string exe, string args)
+        finally
         {
-            var psi = new ProcessStartInfo(exe, args)
+            File.Delete(dbp);
+            if (had)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            try
-            {
-                using Process p = Process.Start(psi)!;
-                string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-                p.WaitForExit();
-                return (p.ExitCode, o);
-            }
-            catch (Exception e)
-            {
-                return (-1, e.Message);
+                File.Move(bak, dbp, overwrite: true);
             }
         }
+    }
 
-        private static int Fail(string msg)
+    private static (int Code, string Output) Sh(string exe, string args)
+    {
+        var psi = new ProcessStartInfo(exe, args)
         {
-            Console.Error.WriteLine($"lintmax-cs: {msg}");
-            return 1;
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        try
+        {
+            using var p = Process.Start(psi)!;
+            var o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            return (p.ExitCode, o);
         }
+        catch (Exception e)
+        {
+            return (-1, e.Message);
+        }
+    }
+
+    private static int Fail(string msg)
+    {
+        Console.Error.WriteLine($"lintmax-cs: {msg}");
+        return 1;
     }
 }
