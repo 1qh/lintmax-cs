@@ -87,7 +87,7 @@ internal static class Linters
         yield return ("editorconfig-checker", ["."]);
         yield return ("gitleaks", ["dir", "--max-archive-depth", "100", "."]);
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
-        yield return ("dprint", [fix ? "fmt" : "check", "--allow-no-files", "--config", dprintConfig]);
+        yield return ("dprint", DprintArgs(root, dprintConfig, fix));
         var shell = ShellFiles(root);
         var conditional = new (bool Active, string Exe, string[] Args)[]
         {
@@ -186,6 +186,29 @@ internal static class Linters
                 .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
                 .Where(static f => !PathUtil.IsExcluded(f)),
         ];
+    }
+
+    private static string[] DprintArgs(string root, string dprintConfig, bool fix)
+    {
+        var args = new List<string> { fix ? "fmt" : "check", "--allow-no-files", "--config", dprintConfig };
+        foreach (var glob in IgnoreGlobs(root))
+        {
+            args.Add("--excludes");
+            args.Add(glob);
+        }
+
+        return [.. args];
+    }
+
+    /// <summary>Reads consumer generated-path excludes from .lintmaxignore (one glob per line).</summary>
+    /// <param name="root">Target directory.</param>
+    /// <returns>The exclude globs (empty when absent).</returns>
+    private static IReadOnlyList<string> IgnoreGlobs(string root)
+    {
+        var file = Path.Combine(root, ".lintmaxignore");
+        return !File.Exists(file)
+            ? []
+            : [.. File.ReadLines(file).Select(static l => l.Trim()).Where(static l => l.Length > 0 && !l.StartsWith('#'))];
     }
 
     private static bool HasFiles(string root, string pattern)
