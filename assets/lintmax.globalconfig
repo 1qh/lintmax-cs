@@ -265,3 +265,12 @@ dotnet_diagnostic.SA1516.severity = none
 dotnet_diagnostic.SA1028.severity = none
 dotnet_diagnostic.SA1107.severity = none
 dotnet_diagnostic.SA1116.severity = none
+# consistency preferences (enforced) — resolve IDE0008/RCS1008 (var) + RCS1002 (braces) by enforcing one choice
+csharp_style_var_for_built_in_types = true:error
+csharp_style_var_when_type_is_apparent = true:error
+csharp_style_var_elsewhere = true:error
+csharp_prefer_braces = true:error
+# RCS1008/RCS1207 conflict with the enforced var preference (IDE0008) -> earned-disable (consistency conflict)
+dotnet_diagnostic.RCS1008.severity = none
+dotnet_diagnostic.RCS1009.severity = none
+dotnet_diagnostic.RCS1010.severity = none
