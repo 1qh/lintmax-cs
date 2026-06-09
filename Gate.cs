@@ -19,6 +19,7 @@ internal static class Gate
     /// <returns>Zero when clean, one otherwise.</returns>
     internal static async Task<int> RunAsync(bool fix)
     {
+        await Evolve.SelfUpdateAsync().ConfigureAwait(false);
         var root = Directory.GetCurrentDirectory();
         var props = Path.Combine(AssetsDir, "inject.props");
         if (!File.Exists(props))
@@ -39,10 +40,11 @@ internal static class Gate
                 await File.ReadAllBytesAsync(Path.Combine(AssetsDir, "lintmax.globalconfig"))
                     .ConfigureAwait(false)
             )
-        );
+        ) + ThisAssembly.Version;
         var treeHash = await Cache.TreeHashAsync(root, cfgHash).ConfigureAwait(false);
         if (
             !fix
+            && !Evolve.NoCache
             && string.Equals(
                 await Cache.LastGreenAsync(root).ConfigureAwait(false),
                 treeHash,
@@ -57,6 +59,7 @@ internal static class Gate
         if (await RunLintersAsync(root, props).ConfigureAwait(false))
         {
             await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
+            await Evolve.StalenessAdvisoryAsync(root).ConfigureAwait(false);
             await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
             return 0;
         }
