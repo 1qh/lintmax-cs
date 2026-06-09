@@ -335,3 +335,6 @@ csharp_style_expression_bodied_accessors = when_on_single_line:error
 csharp_style_expression_bodied_indexers = when_on_single_line:error
 csharp_style_expression_bodied_lambdas = when_on_single_line:error
 csharp_style_expression_bodied_local_functions = when_on_single_line:error
+# RCS1016 (Roslynator body-style) overlaps + oscillates vs IDE0022/IDE0025 (Roslyn, aligned to when_on_single_line)
+# on csharpier-width-boundary members -> IDE rules own body-style; earned-disable RCS1016.
+dotnet_diagnostic.RCS1016.severity = none
