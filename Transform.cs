@@ -11,6 +11,16 @@ namespace LintmaxCs;
 /// <summary>Strips non-survivor comments from C# source (survivor set kept verbatim).</summary>
 internal static class Transform
 {
+    private static readonly string[] XmlExtensions =
+    [
+        ".csproj",
+        ".props",
+        ".targets",
+        ".xml",
+        ".resx",
+        ".config",
+    ];
+
     /// <summary>Strips every C# file under <paramref name="root"/>; returns count changed.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="token">Cancellation token.</param>
@@ -58,6 +68,57 @@ internal static class Transform
         }
 
         return offenders;
+    }
+
+    /// <summary>Returns XML files that are not well-formed (in-process, no external tool).</summary>
+    /// <param name="root">Target directory.</param>
+    /// <param name="token">Cancellation token.</param>
+    /// <returns>The malformed XML file paths.</returns>
+    internal static Task<IReadOnlyList<string>> MalformedXmlAsync(
+        string root,
+        CancellationToken token
+    )
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        return CoreAsync();
+
+        async Task<IReadOnlyList<string>> CoreAsync()
+        {
+            var bad = new List<string>();
+            foreach (
+                var file in Directory
+                    .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+                    .Where(IsXml)
+            )
+            {
+                try
+                {
+                    var text = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
+                    var settings = new System.Xml.XmlReaderSettings { Async = true };
+                    using var sr = new StringReader(text);
+                    using var reader = System.Xml.XmlReader.Create(sr, settings);
+                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    {
+                        token.ThrowIfCancellationRequested();
+                    }
+                }
+                catch (System.Xml.XmlException)
+                {
+                    bad.Add(file);
+                }
+            }
+
+            return bad;
+        }
+    }
+
+    private static bool IsXml(string file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        var excluded =
+            file.Contains("/obj/", StringComparison.Ordinal)
+            || file.Contains("/bin/", StringComparison.Ordinal);
+        return !excluded && XmlExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal);
     }
 
     private static IEnumerable<string> CsFiles(string root)

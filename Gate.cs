@@ -163,6 +163,13 @@ internal static class Gate
 
         var fileTypesOk = await Linters.CheckAsync(root, cfg, token).ConfigureAwait(false);
         var offenders = await Transform.OffendersAsync(root, token).ConfigureAwait(false);
+        var badXml = await Transform.MalformedXmlAsync(root, token).ConfigureAwait(false);
+        foreach (var f in badXml)
+        {
+            await Console
+                .Error.WriteLineAsync($"{f}: malformed XML".AsMemory(), token)
+                .ConfigureAwait(false);
+        }
         foreach (var f in offenders)
         {
             await Console
@@ -170,7 +177,8 @@ internal static class Gate
                 .ConfigureAwait(false);
         }
 
-        return code is 0 && fileTypesOk && noDeprecated && offenders.Count is 0;
+        var buildClean = code is 0 && fileTypesOk && noDeprecated;
+        return buildClean && offenders.Count is 0 && badXml.Count is 0;
     }
 
     /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>

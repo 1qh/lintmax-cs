@@ -15,7 +15,6 @@ internal static class Linters
         "--severity=style",
         "--external-sources",
     ];
-    private static readonly string[] XmlNoOut = ["--noout"];
     private static readonly string[] HadolintFlags =
     [
         "--strict-labels",
@@ -129,7 +128,6 @@ internal static class Linters
             ),
             (HasFiles(root, "*.toml"), "taplo", ["lint"]),
             (DockerFiles(root).Length > 0, "hadolint", [.. HadolintFlags, .. DockerFiles(root)]),
-            (XmlFiles(root).Length > 0, "xmllint", [.. XmlNoOut, .. XmlFiles(root)]),
             (
                 WebFiles(root),
                 "biome",
@@ -170,15 +168,6 @@ internal static class Linters
                 .Where(static f =>
                     Path.GetFileName(f).StartsWith("Dockerfile", StringComparison.Ordinal)
                 ),
-        ];
-    }
-
-    private static string[] XmlFiles(string root)
-    {
-        string[] ext = [".csproj", ".props", ".targets", ".xml", ".resx", ".config"];
-        return
-        [
-            .. Files(root).Where(f => ext.Contains(Path.GetExtension(f), StringComparer.Ordinal)),
         ];
     }
 
