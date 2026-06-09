@@ -8,20 +8,21 @@ namespace LintmaxCs;
 internal static class Rules
 {
     /// <summary>Prints each explicitly-forced rule id.</summary>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>Process exit code.</returns>
-    internal static async Task<int> ListAsync()
+    internal static async Task<int> ListAsync(CancellationToken token)
     {
         var gc = Path.Combine(AppContext.BaseDirectory, "assets", "lintmax.globalconfig");
         if (!File.Exists(gc))
         {
             await Console
-                .Error.WriteLineAsync("lintmax-cs: globalconfig missing")
+                .Error.WriteLineAsync("lintmax-cs: globalconfig missing".AsMemory(), token)
                 .ConfigureAwait(false);
             return 1;
         }
 
         var enabled = 0;
-        foreach (var line in await File.ReadAllLinesAsync(gc).ConfigureAwait(false))
+        foreach (var line in await File.ReadAllLinesAsync(gc, token).ConfigureAwait(false))
         {
             var t = line.Trim();
             if (
@@ -29,16 +30,16 @@ internal static class Rules
                 && t.EndsWith("severity = error", StringComparison.Ordinal)
             )
             {
-                await Console.Out.WriteLineAsync(t.Split('.')[1]).ConfigureAwait(false);
+                await Console
+                    .Out.WriteLineAsync(t.Split('.')[1].AsMemory(), token)
+                    .ConfigureAwait(false);
                 enabled++;
             }
         }
 
-        await Console
-            .Error.WriteLineAsync(
-                $"{enabled.ToString(System.Globalization.CultureInfo.InvariantCulture)} forced rules + every enabled-by-default rule (-> error)"
-            )
-            .ConfigureAwait(false);
+        var summary =
+            $"{enabled.ToString(System.Globalization.CultureInfo.InvariantCulture)} forced rules + every enabled-by-default rule (-> error)";
+        await Console.Error.WriteLineAsync(summary.AsMemory(), token).ConfigureAwait(false);
         return 0;
     }
 }

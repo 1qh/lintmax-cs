@@ -286,13 +286,7 @@ dotnet_diagnostic.SA1637.severity = none
 dotnet_diagnostic.SA1638.severity = none
 dotnet_diagnostic.SA1640.severity = none
 dotnet_diagnostic.SA1641.severity = none
-dotnet_diagnostic.MA0136.severity = none
 dotnet_diagnostic.S4055.severity = none
-dotnet_diagnostic.S1192.severity = none
-dotnet_diagnostic.MA0032.severity = none
-dotnet_diagnostic.MA0040.severity = none
-dotnet_diagnostic.MA0079.severity = none
-dotnet_diagnostic.MA0080.severity = none
 roslynator_body_style = expression
 roslynator_use_block_body_when_declaration_spans_over_multiple_lines = true
 roslynator_use_block_body_when_expression_spans_over_multiple_lines = true
@@ -323,3 +317,7 @@ dotnet_diagnostic.RCS1051.severity = none
 # IDE0090 (target-typed new) conflicts RCS1250 (explicit object creation) -> earned-disable
 dotnet_diagnostic.IDE0090.severity = none
 dotnet_diagnostic.RCS1036.severity = none
+dotnet_diagnostic.RCS1231.severity = none
+# RCS1231 false-positive on CancellationToken (by-value by BCL design)
+# S1309 opposes inline #pragma suppressions, which the evidenced-reason policy permits
+dotnet_diagnostic.S1309.severity = none

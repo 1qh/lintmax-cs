@@ -21,21 +21,23 @@ internal static class Evolve
     internal static bool Timing => Flag("LINTMAX_TIMING");
 
     /// <summary>Updates the tool itself to latest under CI; no-op locally.</summary>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    internal static async Task SelfUpdateAsync()
+    internal static async Task SelfUpdateAsync(CancellationToken token)
     {
         if (!IsCi)
         {
             return;
         }
 
-        _ = await ShAsync("dotnet", "tool update -g lintmax-cs").ConfigureAwait(false);
+        _ = await ShAsync("dotnet", "tool update -g lintmax-cs", token).ConfigureAwait(false);
     }
 
     /// <summary>Prints an advisory when analyzer packages lag latest; never fails the gate.</summary>
     /// <param name="root">Target directory.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    internal static async Task StalenessAdvisoryAsync(string root)
+    internal static async Task StalenessAdvisoryAsync(string root, CancellationToken token)
     {
         if (Flag(SkipStaleness))
         {
@@ -44,7 +46,8 @@ internal static class Evolve
 
         var (_, listed) = await ShAsync(
                 "dotnet",
-                $"list \"{root}\" package --outdated --highest-minor"
+                $"list \"{root}\" package --outdated --highest-minor",
+                token
             )
             .ConfigureAwait(false);
         var lines = listed
@@ -55,7 +58,9 @@ internal static class Evolve
             );
         foreach (var line in lines)
         {
-            await Console.Error.WriteLineAsync($"stale: {line.Trim()}").ConfigureAwait(false);
+            await Console
+                .Error.WriteLineAsync($"stale: {line.Trim()}".AsMemory(), token)
+                .ConfigureAwait(false);
         }
     }
 
@@ -65,7 +70,11 @@ internal static class Evolve
         return !string.IsNullOrEmpty(value) && !string.Equals(value, "0", StringComparison.Ordinal);
     }
 
-    private static Task<(int Code, string Output)> ShAsync(string exe, string args)
+    private static Task<(int Code, string Output)> ShAsync(
+        string exe,
+        string args,
+        CancellationToken token
+    )
     {
         ArgumentNullException.ThrowIfNull(exe);
         return CoreAsync();
@@ -81,8 +90,8 @@ internal static class Evolve
             try
             {
                 using var p = Process.Start(psi)!;
-                var output = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-                await p.WaitForExitAsync().ConfigureAwait(false);
+                var output = await p.StandardOutput.ReadToEndAsync(token).ConfigureAwait(false);
+                await p.WaitForExitAsync(token).ConfigureAwait(false);
                 return (p.ExitCode, output);
             }
             catch (Exception e)

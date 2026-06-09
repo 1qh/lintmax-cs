@@ -2,7 +2,6 @@
 // Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
 // </copyright>
 
-using System.ComponentModel;
 using System.Diagnostics;
 
 namespace LintmaxCs;
@@ -16,75 +15,88 @@ internal static class Gate
 
     /// <summary>Runs the gate, optionally autofixing first.</summary>
     /// <param name="fix">When true, formats and autofixes before gating.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>Zero when clean, one otherwise.</returns>
-    internal static async Task<int> RunAsync(bool fix)
+    internal static async Task<int> RunAsync(bool fix, CancellationToken token)
     {
-        await Evolve.SelfUpdateAsync().ConfigureAwait(false);
+        await Evolve.SelfUpdateAsync(token).ConfigureAwait(false);
         var root = Directory.GetCurrentDirectory();
         var props = Path.Combine(AssetsDir, "inject.props");
         if (!File.Exists(props))
         {
             await Console
-                .Error.WriteLineAsync($"lintmax-cs: assets missing: {props}")
+                .Error.WriteLineAsync($"lintmax-cs: assets missing: {props}".AsMemory(), token)
                 .ConfigureAwait(false);
             return 1;
         }
 
         if (fix)
         {
-            await AutofixAsync(root, props).ConfigureAwait(false);
+            await AutofixAsync(root, props, token).ConfigureAwait(false);
         }
 
+        var cfgBytes = await File.ReadAllBytesAsync(
+                Path.Combine(AssetsDir, "lintmax.globalconfig"),
+                token
+            )
+            .ConfigureAwait(false);
         var cfgHash =
-            Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    await File.ReadAllBytesAsync(Path.Combine(AssetsDir, "lintmax.globalconfig"))
-                        .ConfigureAwait(false)
-                )
-            ) + ThisAssembly.Version;
-        var treeHash = await Cache.TreeHashAsync(root, cfgHash).ConfigureAwait(false);
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cfgBytes))
+            + ThisAssembly.Version;
+        var treeHash = await Cache.TreeHashAsync(root, cfgHash, token).ConfigureAwait(false);
         if (
             !fix
             && !Evolve.NoCache
             && string.Equals(
-                await Cache.LastGreenAsync(root).ConfigureAwait(false),
+                await Cache.LastGreenAsync(root, token).ConfigureAwait(false),
                 treeHash,
                 StringComparison.Ordinal
             )
         )
         {
-            await Console.Out.WriteLineAsync("ok (cached)").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync("ok (cached)".AsMemory(), token).ConfigureAwait(false);
             return 0;
         }
 
-        var watch = Evolve.Timing ? System.Diagnostics.Stopwatch.StartNew() : null;
-        var passed = await RunLintersAsync(root, props).ConfigureAwait(false);
+        var watch = Evolve.Timing ? Stopwatch.StartNew() : null;
+        var passed = await RunLintersAsync(root, props, token).ConfigureAwait(false);
         if (watch is not null)
         {
-            await Console.Error.WriteLineAsync($"timing: {watch.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}ms").ConfigureAwait(false);
+            await Console
+                .Error.WriteLineAsync(
+                    $"timing: {watch.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}ms".AsMemory(),
+                    token
+                )
+                .ConfigureAwait(false);
         }
 
         if (passed)
         {
-            await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
-            await Evolve.StalenessAdvisoryAsync(root).ConfigureAwait(false);
-            await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
+            await Cache.StoreGreenAsync(root, treeHash, token).ConfigureAwait(false);
+            await Evolve.StalenessAdvisoryAsync(root, token).ConfigureAwait(false);
+            await Console.Out.WriteLineAsync("ok".AsMemory(), token).ConfigureAwait(false);
             return 0;
         }
 
         return 1;
     }
 
-    /// <summary>Runs the C# gate plus the text-file linters, printing any findings.</summary>
+    /// <summary>Runs the C# gate plus the file-type linters, printing any findings.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="props">Path to the injected props.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>True when every linter passes.</returns>
-    private static async Task<bool> RunLintersAsync(string root, string props)
+    private static async Task<bool> RunLintersAsync(
+        string root,
+        string props,
+        CancellationToken token
+    )
     {
         var cfg = Path.Combine(AssetsDir, "dprint.json");
         var (code, output) = await ShAsync(
                 Dotnet,
-                $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror"
+                $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror",
+                token
             )
             .ConfigureAwait(false);
         foreach (
@@ -93,15 +105,15 @@ internal static class Gate
                 .Where(l => l.Contains(": error ", StringComparison.Ordinal))
         )
         {
-            await Console.Error.WriteLineAsync(line.Trim()).ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(line.Trim().AsMemory(), token).ConfigureAwait(false);
         }
 
-        var fileTypesOk = await Linters.CheckAsync(root, cfg).ConfigureAwait(false);
-        var offenders = await Transform.OffendersAsync(root).ConfigureAwait(false);
+        var fileTypesOk = await Linters.CheckAsync(root, cfg, token).ConfigureAwait(false);
+        var offenders = await Transform.OffendersAsync(root, token).ConfigureAwait(false);
         foreach (var f in offenders)
         {
             await Console
-                .Error.WriteLineAsync($"{f}: strippable comment (run fix)")
+                .Error.WriteLineAsync($"{f}: strippable comment (run fix)".AsMemory(), token)
                 .ConfigureAwait(false);
         }
 
@@ -111,8 +123,9 @@ internal static class Gate
     /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="props">Path to the injected props.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    private static async Task AutofixAsync(string root, string props)
+    private static async Task AutofixAsync(string root, string props, CancellationToken token)
     {
         var dbp = Path.Combine(root, "Directory.Build.props");
         var had = File.Exists(dbp);
@@ -122,17 +135,21 @@ internal static class Gate
             File.Move(dbp, bak, overwrite: true);
         }
 
-        await File.WriteAllTextAsync(dbp, $"<Project><Import Project=\"{props}\" /></Project>")
+        await File.WriteAllTextAsync(
+                dbp,
+                $"<Project><Import Project=\"{props}\" /></Project>",
+                token
+            )
             .ConfigureAwait(false);
         try
         {
-            _ = await Transform.StripAsync(root).ConfigureAwait(false);
-            _ = await ShAsync(Dotnet, "restore").ConfigureAwait(false);
-            _ = await ShAsync("csharpier", "format .").ConfigureAwait(false);
+            _ = await Transform.StripAsync(root, token).ConfigureAwait(false);
+            _ = await ShAsync(Dotnet, "restore", token).ConfigureAwait(false);
+            _ = await ShAsync("csharpier", "format .", token).ConfigureAwait(false);
             await Linters
-                .FixAsync(root, Path.Combine(AssetsDir, "dprint.json"))
+                .FixAsync(root, Path.Combine(AssetsDir, "dprint.json"), token)
                 .ConfigureAwait(false);
-            _ = await ShAsync("git", "add -A").ConfigureAwait(false);
+            _ = await ShAsync("git", "add -A", token).ConfigureAwait(false);
             foreach (
                 var fx in new[]
                 {
@@ -141,17 +158,22 @@ internal static class Gate
                 }
             )
             {
-                _ = await ShAsync(Dotnet, fx).ConfigureAwait(false);
-                var (vcode, _) = await ShAsync(Dotnet, "build -c Release").ConfigureAwait(false);
-                if (vcode is 0)
+                _ = await ShAsync(Dotnet, fx, token).ConfigureAwait(false);
+                if (
+                    (await ShAsync(Dotnet, "build -c Release", token).ConfigureAwait(false)).Code
+                    is 0
+                )
                 {
-                    _ = await ShAsync("git", "add -A").ConfigureAwait(false);
+                    _ = await ShAsync("git", "add -A", token).ConfigureAwait(false);
                 }
                 else
                 {
-                    _ = await ShAsync("git", "checkout -- .").ConfigureAwait(false);
+                    _ = await ShAsync("git", "checkout -- .", token).ConfigureAwait(false);
                     await Console
-                        .Error.WriteLineAsync($"lintmax-cs: '{fx}' broke the build; skipped.")
+                        .Error.WriteLineAsync(
+                            $"lintmax-cs: '{fx}' broke the build; skipped.".AsMemory(),
+                            token
+                        )
                         .ConfigureAwait(false);
                 }
             }
@@ -166,29 +188,40 @@ internal static class Gate
         }
     }
 
-    /// <summary>Runs a child process and captures its combined output.</summary>
-    /// <param name="exe">Executable name.</param>
-    /// <param name="args">Argument string.</param>
-    /// <returns>The exit code and combined stdout+stderr.</returns>
-    private static async Task<(int Code, string Output)> ShAsync(string exe, string args)
+    private static Task<(int Code, string Output)> ShAsync(
+        string exe,
+        string args,
+        CancellationToken token
+    )
     {
-        var psi = new ProcessStartInfo(exe, args)
+        ArgumentNullException.ThrowIfNull(exe);
+        return CoreAsync();
+
+        async Task<(int Code, string Output)> CoreAsync()
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        try
-        {
-            using var p = Process.Start(psi)!;
-            var stdout = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-            var stderr = await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
-            await p.WaitForExitAsync().ConfigureAwait(false);
-            return (p.ExitCode, stdout + stderr);
-        }
-        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException)
-        {
-            return (-1, e.ToString());
+            var psi = new ProcessStartInfo(exe, args)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            try
+            {
+                using var p = Process.Start(psi)!;
+                var stdout = await p.StandardOutput.ReadToEndAsync(token).ConfigureAwait(false);
+                var stderr = await p.StandardError.ReadToEndAsync(token).ConfigureAwait(false);
+                await p.WaitForExitAsync(token).ConfigureAwait(false);
+                return (p.ExitCode, stdout + stderr);
+            }
+            catch (Exception e)
+                when (e
+                        is System.ComponentModel.Win32Exception
+                            or InvalidOperationException
+                            or IOException
+                )
+            {
+                return (-1, e.Message);
+            }
         }
     }
 }

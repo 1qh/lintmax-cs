@@ -12,8 +12,9 @@ internal static class Linters
     /// <summary>Runs the read-only file-type gate; prints findings; returns true when all pass.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="dprintConfig">Path to the bundled dprint config.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>True when every applicable linter passes.</returns>
-    internal static Task<bool> CheckAsync(string root, string dprintConfig)
+    internal static Task<bool> CheckAsync(string root, string dprintConfig, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(root);
         return CoreAsync();
@@ -21,7 +22,7 @@ internal static class Linters
         async Task<bool> CoreAsync()
         {
             var tasks = Applicable(root, dprintConfig, fix: false)
-                .Select(job => ShAsync(job.Exe, job.Args, root));
+                .Select(job => ShAsync(job.Exe, job.Args, root, token));
             var results = await Task.WhenAll(tasks).ConfigureAwait(false);
             var ok = true;
             foreach (var (code, output) in results)
@@ -29,7 +30,9 @@ internal static class Linters
                 if (code is not 0)
                 {
                     ok = false;
-                    await Console.Error.WriteLineAsync(output.Trim()).ConfigureAwait(false);
+                    await Console
+                        .Error.WriteLineAsync(output.Trim().AsMemory(), token)
+                        .ConfigureAwait(false);
                 }
             }
 
@@ -40,8 +43,9 @@ internal static class Linters
     /// <summary>Runs the write-mode formatters for every applicable file type.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="dprintConfig">Path to the bundled dprint config.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    internal static Task FixAsync(string root, string dprintConfig)
+    internal static Task FixAsync(string root, string dprintConfig, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(root);
         return CoreAsync();
@@ -50,7 +54,7 @@ internal static class Linters
         {
             foreach (var (exe, args) in Applicable(root, dprintConfig, fix: true))
             {
-                _ = await ShAsync(exe, args, root).ConfigureAwait(false);
+                _ = await ShAsync(exe, args, root, token).ConfigureAwait(false);
             }
         }
     }
@@ -110,7 +114,12 @@ internal static class Linters
             );
     }
 
-    private static Task<(int Code, string Output)> ShAsync(string exe, string[] args, string cwd)
+    private static Task<(int Code, string Output)> ShAsync(
+        string exe,
+        string[] args,
+        string cwd,
+        CancellationToken token
+    )
     {
         ArgumentNullException.ThrowIfNull(exe);
         ArgumentNullException.ThrowIfNull(args);
@@ -134,9 +143,9 @@ internal static class Linters
             {
                 using var p = Process.Start(psi)!;
                 var output =
-                    await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false)
-                    + await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
-                await p.WaitForExitAsync().ConfigureAwait(false);
+                    await p.StandardOutput.ReadToEndAsync(token).ConfigureAwait(false)
+                    + await p.StandardError.ReadToEndAsync(token).ConfigureAwait(false);
+                await p.WaitForExitAsync(token).ConfigureAwait(false);
                 return (p.ExitCode, output);
             }
             catch (Exception e)

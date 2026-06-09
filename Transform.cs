@@ -13,17 +13,18 @@ internal static class Transform
 {
     /// <summary>Strips every C# file under <paramref name="root"/>; returns count changed.</summary>
     /// <param name="root">Target directory.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>Number of files rewritten.</returns>
-    internal static async Task<int> StripAsync(string root)
+    internal static async Task<int> StripAsync(string root, CancellationToken token)
     {
         var changed = 0;
         foreach (var file in CsFiles(root))
         {
-            var original = await File.ReadAllTextAsync(file).ConfigureAwait(false);
-            var stripped = await StripTextAsync(original).ConfigureAwait(false);
+            var original = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
+            var stripped = await StripTextAsync(original, token).ConfigureAwait(false);
             if (!string.Equals(original, stripped, StringComparison.Ordinal))
             {
-                await File.WriteAllTextAsync(file, stripped).ConfigureAwait(false);
+                await File.WriteAllTextAsync(file, stripped, token).ConfigureAwait(false);
                 changed++;
             }
         }
@@ -33,17 +34,21 @@ internal static class Transform
 
     /// <summary>Lists files that still hold strippable comments.</summary>
     /// <param name="root">Target directory.</param>
+    /// <param name="token">Cancellation token.</param>
     /// <returns>The offending file paths.</returns>
-    internal static async Task<IReadOnlyList<string>> OffendersAsync(string root)
+    internal static async Task<IReadOnlyList<string>> OffendersAsync(
+        string root,
+        CancellationToken token
+    )
     {
         var offenders = new List<string>();
         foreach (var file in CsFiles(root))
         {
-            var original = await File.ReadAllTextAsync(file).ConfigureAwait(false);
+            var original = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
             if (
                 !string.Equals(
                     original,
-                    await StripTextAsync(original).ConfigureAwait(false),
+                    await StripTextAsync(original, token).ConfigureAwait(false),
                     StringComparison.Ordinal
                 )
             )
@@ -67,15 +72,15 @@ internal static class Transform
             );
     }
 
-    private static Task<string> StripTextAsync(string text)
+    private static Task<string> StripTextAsync(string text, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(text);
         return CoreAsync();
 
         async Task<string> CoreAsync()
         {
-            var tree = CSharpSyntaxTree.ParseText(text);
-            var root = await tree.GetRootAsync().ConfigureAwait(false);
+            var tree = CSharpSyntaxTree.ParseText(text, cancellationToken: token);
+            var root = await tree.GetRootAsync(token).ConfigureAwait(false);
             var kill = new List<TextSpan>();
             foreach (var trivia in root.DescendantTrivia())
             {
