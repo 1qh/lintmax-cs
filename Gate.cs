@@ -1,3 +1,5 @@
+// Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
+
 using System.Diagnostics;
 
 namespace LintmaxCs;

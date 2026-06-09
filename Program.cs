@@ -1,3 +1,5 @@
+// Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
+
 // <copyright file="Program.cs" company="PlaceholderCompany">
 // Copyright (c) PlaceholderCompany. All rights reserved.
 // </copyright>
