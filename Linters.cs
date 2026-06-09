@@ -15,6 +15,11 @@ internal static class Linters
         "--severity=style",
         "--external-sources",
     ];
+    private static readonly string[] XmlNoOut = ["--noout"];
+    private static string MarkdownConfig =>
+        Path.Combine(AppContext.BaseDirectory, "assets", ".markdownlint.jsonc");
+    private static string YamlConfig =>
+        Path.Combine(AppContext.BaseDirectory, "assets", ".yamllint.yaml");
 
     /// <summary>Runs the read-only file-type gate; prints findings; returns true when all pass.</summary>
     /// <param name="root">Target directory.</param>
@@ -101,11 +106,56 @@ internal static class Linters
                 fix ? ["xstyler", "-r", "-d", "."] : ["xstyler", "-r", "-d", ".", "--passive"]
             ),
             (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", []),
+            (
+                HasFiles(root, "*.md"),
+                "markdownlint-cli2",
+                fix
+                    ? ["--config", MarkdownConfig, "--fix", "**/*.md"]
+                    : ["--config", MarkdownConfig, "**/*.md"]
+            ),
+            (
+                HasFiles(root, "*.yml") || HasFiles(root, "*.yaml"),
+                "yamllint",
+                ["-c", YamlConfig, "--strict", "."]
+            ),
+            (HasFiles(root, "*.toml"), "taplo", ["lint"]),
+            (DockerFiles(root).Length > 0, "hadolint", DockerFiles(root)),
+            (XmlFiles(root).Length > 0, "xmllint", [.. XmlNoOut, .. XmlFiles(root)]),
         };
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
             yield return (exe, args);
         }
+    }
+
+    private static string[] DockerFiles(string root)
+    {
+        return
+        [
+            .. Files(root)
+                .Where(static f =>
+                    Path.GetFileName(f).StartsWith("Dockerfile", StringComparison.Ordinal)
+                ),
+        ];
+    }
+
+    private static string[] XmlFiles(string root)
+    {
+        string[] ext = [".csproj", ".props", ".targets", ".xml", ".resx", ".config"];
+        return
+        [
+            .. Files(root).Where(f => ext.Contains(Path.GetExtension(f), StringComparer.Ordinal)),
+        ];
+    }
+
+    private static IEnumerable<string> Files(string root)
+    {
+        return Directory
+            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Where(static f =>
+                !f.Contains("/obj/", StringComparison.Ordinal)
+                && !f.Contains("/bin/", StringComparison.Ordinal)
+            );
     }
 
     private static string[] ShellFiles(string root)
