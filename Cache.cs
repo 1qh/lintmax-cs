@@ -79,11 +79,7 @@ internal static class Cache
     private static bool IsTracked(string f)
     {
         ArgumentNullException.ThrowIfNull(f);
-        var excluded =
-            f.Contains("/obj/", StringComparison.Ordinal)
-            || f.Contains("/bin/", StringComparison.Ordinal)
-            || f.Contains("/.git/", StringComparison.Ordinal);
-        return !excluded && TrackedExtensions.Contains(Path.GetExtension(f));
+        return !PathUtil.IsExcluded(f) && TrackedExtensions.Contains(Path.GetExtension(f));
     }
 
     private static string CachePath(string root)

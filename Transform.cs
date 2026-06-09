@@ -115,10 +115,8 @@ internal static class Transform
     private static bool IsXml(string file)
     {
         ArgumentNullException.ThrowIfNull(file);
-        var excluded =
-            file.Contains("/obj/", StringComparison.Ordinal)
-            || file.Contains("/bin/", StringComparison.Ordinal);
-        return !excluded && XmlExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal);
+        return !PathUtil.IsExcluded(file)
+            && XmlExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal);
     }
 
     private static IEnumerable<string> CsFiles(string root)
@@ -126,8 +124,7 @@ internal static class Transform
         return Directory
             .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(static f =>
-                !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal)
+                !PathUtil.IsExcluded(f)
                 && !f.EndsWith(".g.cs", StringComparison.Ordinal)
                 && !f.EndsWith(".g.i.cs", StringComparison.Ordinal)
             );

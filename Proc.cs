@@ -19,10 +19,15 @@ internal static class Proc
         }
 
         var pathExt = OperatingSystem.IsWindows()
-            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(
+                ';',
+                StringSplitOptions.RemoveEmptyEntries
+            )
             : [string.Empty];
-        var dirs = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        var dirs = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(
+            Path.PathSeparator,
+            StringSplitOptions.RemoveEmptyEntries
+        );
         foreach (var dir in dirs)
         {
             foreach (var ext in pathExt)

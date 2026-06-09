@@ -108,9 +108,7 @@ internal static class Gate
                 (
                     f.EndsWith(".csproj", StringComparison.Ordinal)
                     || f.EndsWith(".sln", StringComparison.Ordinal)
-                )
-                && !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal)
+                ) && !PathUtil.IsExcluded(f)
             );
         if (!hasProject)
         {

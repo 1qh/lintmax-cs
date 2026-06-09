@@ -175,10 +175,7 @@ internal static class Linters
     {
         return Directory
             .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(static f =>
-                !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal)
-            );
+            .Where(static f => !PathUtil.IsExcluded(f));
     }
 
     private static string[] ShellFiles(string root)
@@ -187,10 +184,7 @@ internal static class Linters
         [
             .. Directory
                 .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
-                .Where(static f =>
-                    !f.Contains("/obj/", StringComparison.Ordinal)
-                    && !f.Contains("/bin/", StringComparison.Ordinal)
-                ),
+                .Where(static f => !PathUtil.IsExcluded(f)),
         ];
     }
 
@@ -198,10 +192,7 @@ internal static class Linters
     {
         return Directory
             .EnumerateFiles(root, pattern, SearchOption.AllDirectories)
-            .Any(static f =>
-                !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal)
-            );
+            .Any(static f => !PathUtil.IsExcluded(f));
     }
 
     private static Task<(int Code, string Output)> ShAsync(
