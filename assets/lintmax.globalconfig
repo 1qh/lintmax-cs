@@ -326,3 +326,5 @@ dotnet_diagnostic.RCS1223.severity = none
 # CA1062 (validate public args) is a PUBLIC-contract concern; api_surface=all over-extends it to private methods
 # (internal callers control args) forcing guard+local-async ceremony with no benefit -> scope to public surface only.
 dotnet_code_quality.CA1062.api_surface = public
+# MA0174 (record WITH explicit 'class') directly contradicts MA0175 (record WITHOUT) -> keep MA0175 (plain 'record')
+dotnet_diagnostic.MA0174.severity = none
