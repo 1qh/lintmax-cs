@@ -321,3 +321,5 @@ dotnet_diagnostic.RCS1231.severity = none
 # RCS1231 false-positive on CancellationToken (by-value by BCL design)
 # S1309 opposes inline #pragma suppressions, which the evidenced-reason policy permits
 dotnet_diagnostic.S1309.severity = none
+# RCS1223 (mark every type with [DebuggerDisplay]) is cosmetic debugger-UX, off-by-default-for-reason -> earned-disable
+dotnet_diagnostic.RCS1223.severity = none
