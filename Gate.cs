@@ -273,7 +273,7 @@ internal static class Gate
                             or IOException
                 )
             {
-                return (-1, e.Message);
+                return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
             }
         }
     }

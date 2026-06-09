@@ -256,7 +256,7 @@ internal static class Linters
                             or IOException
                 )
             {
-                return (-1, e.ToString());
+                return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
             }
         }
     }
