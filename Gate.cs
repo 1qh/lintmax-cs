@@ -137,8 +137,7 @@ internal static class Gate
             _ = await Transform.StripAsync(root).ConfigureAwait(false);
             _ = await ShAsync(Dotnet, "restore").ConfigureAwait(false);
             _ = await ShAsync("csharpier", "format .").ConfigureAwait(false);
-            _ = await ShAsync("dprint", "fmt").ConfigureAwait(false);
-            _ = await ShAsync("typos", "--write-changes").ConfigureAwait(false);
+            await Linters.FixAsync(root, Path.Combine(AssetsDir, "dprint.json")).ConfigureAwait(false);
             _ = await ShAsync("git", "add -A").ConfigureAwait(false);
             foreach (
                 var fx in new[]
