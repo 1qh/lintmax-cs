@@ -217,7 +217,7 @@ internal static class Linters
 
         async Task<(int Code, string Output)> CoreAsync()
         {
-            var psi = new ProcessStartInfo(exe)
+            var psi = new ProcessStartInfo(Proc.ResolveExe(exe))
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

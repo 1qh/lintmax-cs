@@ -260,7 +260,7 @@ internal static class Gate
 
         async Task<(int Code, string Output)> CoreAsync()
         {
-            var psi = new ProcessStartInfo(exe, args)
+            var psi = new ProcessStartInfo(Proc.ResolveExe(exe), args)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
