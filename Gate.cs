@@ -56,6 +56,14 @@ namespace LintmaxCs
                         File.Move(backup, tempDbp, overwrite: true);
                     }
                 }
+
+                var (vcode, _) = Sh("dotnet", "build -c Release");
+                if (vcode != 0)
+                {
+                    _ = Sh("git", "checkout -- .");
+                    Console.Error.WriteLine("lintmax-cs: autofix broke the build; reverted. fix findings by hand.");
+                    return 1;
+                }
             }
 
             // gate = child-process build with configless injection (consumer untouched)
