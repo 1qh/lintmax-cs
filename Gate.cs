@@ -38,10 +38,7 @@ namespace LintmaxCs
                     File.Move(tempDbp, backup, overwrite: true);
                 }
 
-                await File.WriteAllTextAsync(
-                    tempDbp,
-                    $"<Project><Import Project=\"{props}\" /></Project>"
-                );
+                File.WriteAllText(tempDbp, $"<Project><Import Project=\"{props}\" /></Project>");
                 try
                 {
                     _ = Sh("dotnet", "restore");
