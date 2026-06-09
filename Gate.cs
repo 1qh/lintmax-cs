@@ -23,7 +23,9 @@ internal static class Gate
         var props = Path.Combine(AssetsDir, "inject.props");
         if (!File.Exists(props))
         {
-            await Console.Error.WriteLineAsync($"lintmax-cs: assets missing: {props}").ConfigureAwait(false);
+            await Console
+                .Error.WriteLineAsync($"lintmax-cs: assets missing: {props}")
+                .ConfigureAwait(false);
             return 1;
         }
 
@@ -33,16 +35,26 @@ internal static class Gate
         }
 
         var cfgHash = Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(
-                Path.Combine(AssetsDir, "lintmax.globalconfig")).ConfigureAwait(false)));
+            System.Security.Cryptography.SHA256.HashData(
+                await File.ReadAllBytesAsync(Path.Combine(AssetsDir, "lintmax.globalconfig"))
+                    .ConfigureAwait(false)
+            )
+        );
         var treeHash = await Cache.TreeHashAsync(root, cfgHash).ConfigureAwait(false);
-        if (!fix && string.Equals(await Cache.LastGreenAsync(root).ConfigureAwait(false), treeHash, StringComparison.Ordinal))
+        if (
+            !fix
+            && string.Equals(
+                await Cache.LastGreenAsync(root).ConfigureAwait(false),
+                treeHash,
+                StringComparison.Ordinal
+            )
+        )
         {
             await Console.Out.WriteLineAsync("ok (cached)").ConfigureAwait(false);
             return 0;
         }
 
-        if (await RunLintersAsync(props).ConfigureAwait(false))
+        if (await RunLintersAsync(root, props).ConfigureAwait(false))
         {
             await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
             await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
@@ -53,15 +65,22 @@ internal static class Gate
     }
 
     /// <summary>Runs the C# gate plus the text-file linters, printing any findings.</summary>
+    /// <param name="root">Target directory.</param>
     /// <param name="props">Path to the injected props.</param>
     /// <returns>True when every linter passes.</returns>
-    private static async Task<bool> RunLintersAsync(string props)
+    private static async Task<bool> RunLintersAsync(string root, string props)
     {
         var cfg = Path.Combine(AssetsDir, "dprint.json");
         var (code, output) = await ShAsync(
-            Dotnet,
-            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror").ConfigureAwait(false);
-        foreach (var line in output.Split('\n').Where(l => l.Contains(": error ", StringComparison.Ordinal)))
+                Dotnet,
+                $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror"
+            )
+            .ConfigureAwait(false);
+        foreach (
+            var line in output
+                .Split('\n')
+                .Where(l => l.Contains(": error ", StringComparison.Ordinal))
+        )
         {
             await Console.Error.WriteLineAsync(line.Trim()).ConfigureAwait(false);
         }
@@ -70,7 +89,15 @@ internal static class Gate
         var typos = await ShAsync("typos", ".").ConfigureAwait(false);
         await PrintIfFailedAsync(dprint).ConfigureAwait(false);
         await PrintIfFailedAsync(typos).ConfigureAwait(false);
-        return code is 0 && dprint.Code is 0 && typos.Code is 0;
+        var offenders = await Transform.OffendersAsync(root).ConfigureAwait(false);
+        foreach (var f in offenders)
+        {
+            await Console
+                .Error.WriteLineAsync($"{f}: strippable comment (run fix)")
+                .ConfigureAwait(false);
+        }
+
+        return code is 0 && dprint.Code is 0 && typos.Code is 0 && offenders.Count is 0;
     }
 
     /// <summary>Prints a linter's output to stderr when it failed.</summary>
@@ -100,15 +127,23 @@ internal static class Gate
             File.Move(dbp, bak, overwrite: true);
         }
 
-        await File.WriteAllTextAsync(dbp, $"<Project><Import Project=\"{props}\" /></Project>").ConfigureAwait(false);
+        await File.WriteAllTextAsync(dbp, $"<Project><Import Project=\"{props}\" /></Project>")
+            .ConfigureAwait(false);
         try
         {
+            _ = await Transform.StripAsync(root).ConfigureAwait(false);
             _ = await ShAsync(Dotnet, "restore").ConfigureAwait(false);
             _ = await ShAsync("csharpier", "format .").ConfigureAwait(false);
             _ = await ShAsync("dprint", "fmt").ConfigureAwait(false);
             _ = await ShAsync("typos", "--write-changes").ConfigureAwait(false);
             _ = await ShAsync("git", "add -A").ConfigureAwait(false);
-            foreach (var fx in new[] { "format style --severity info", "format analyzers --severity info" })
+            foreach (
+                var fx in new[]
+                {
+                    "format style --severity info",
+                    "format analyzers --severity info",
+                }
+            )
             {
                 _ = await ShAsync(Dotnet, fx).ConfigureAwait(false);
                 var (vcode, _) = await ShAsync(Dotnet, "build -c Release").ConfigureAwait(false);
@@ -119,7 +154,9 @@ internal static class Gate
                 else
                 {
                     _ = await ShAsync("git", "checkout -- .").ConfigureAwait(false);
-                    await Console.Error.WriteLineAsync($"lintmax-cs: '{fx}' broke the build; skipped.").ConfigureAwait(false);
+                    await Console
+                        .Error.WriteLineAsync($"lintmax-cs: '{fx}' broke the build; skipped.")
+                        .ConfigureAwait(false);
                 }
             }
         }

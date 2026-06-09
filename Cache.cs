@@ -10,9 +10,21 @@ namespace LintmaxCs;
 /// <summary>Green-tree-hash cache: skips the gate when nothing relevant changed.</summary>
 internal static class Cache
 {
-    private static readonly HashSet<string> TrackedExtensions = new HashSet<string>(StringComparer.Ordinal)
+    private static readonly HashSet<string> TrackedExtensions = new HashSet<string>(
+        StringComparer.Ordinal
+    )
     {
-        ".cs", ".csproj", ".xaml", ".json", ".md", ".toml", ".yml", ".yaml", ".sh", ".props", ".targets",
+        ".cs",
+        ".csproj",
+        ".xaml",
+        ".json",
+        ".md",
+        ".toml",
+        ".yml",
+        ".yaml",
+        ".sh",
+        ".props",
+        ".targets",
     };
 
     /// <summary>Computes a hash over hand-written source + the gate config.</summary>
@@ -60,7 +72,8 @@ internal static class Cache
     private static bool IsTracked(string f)
     {
         ArgumentNullException.ThrowIfNull(f);
-        var excluded = f.Contains("/obj/", StringComparison.Ordinal)
+        var excluded =
+            f.Contains("/obj/", StringComparison.Ordinal)
             || f.Contains("/bin/", StringComparison.Ordinal)
             || f.Contains("/.git/", StringComparison.Ordinal);
         return !excluded && TrackedExtensions.Contains(Path.GetExtension(f));
