@@ -42,22 +42,48 @@ internal static class Gate
             return 0;
         }
 
-        var (code, output) = await ShAsync(
-            Dotnet,
-            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror").ConfigureAwait(false);
-        if (code is 0)
+        if (await RunLintersAsync(props).ConfigureAwait(false))
         {
             await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
             await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
             return 0;
         }
 
+        return 1;
+    }
+
+    /// <summary>Runs the C# gate plus the text-file linters, printing any findings.</summary>
+    /// <param name="props">Path to the injected props.</param>
+    /// <returns>True when every linter passes.</returns>
+    private static async Task<bool> RunLintersAsync(string props)
+    {
+        var cfg = Path.Combine(AssetsDir, "dprint.json");
+        var (code, output) = await ShAsync(
+            Dotnet,
+            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror").ConfigureAwait(false);
         foreach (var line in output.Split('\n').Where(l => l.Contains(": error ", StringComparison.Ordinal)))
         {
             await Console.Error.WriteLineAsync(line.Trim()).ConfigureAwait(false);
         }
 
-        return 1;
+        var dprint = await ShAsync("dprint", $"check --config \"{cfg}\"").ConfigureAwait(false);
+        var typos = await ShAsync("typos", ".").ConfigureAwait(false);
+        await PrintIfFailedAsync(dprint).ConfigureAwait(false);
+        await PrintIfFailedAsync(typos).ConfigureAwait(false);
+        return code is 0 && dprint.Code is 0 && typos.Code is 0;
+    }
+
+    /// <summary>Prints a linter's output to stderr when it failed.</summary>
+    /// <param name="result">The linter exit code and output.</param>
+    /// <returns>A task.</returns>
+    private static async Task PrintIfFailedAsync((int Code, string Output) result)
+    {
+        if (result.Code is 0)
+        {
+            return;
+        }
+
+        await Console.Error.WriteLineAsync(result.Output.Trim()).ConfigureAwait(false);
     }
 
     /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>
@@ -110,7 +136,7 @@ internal static class Gate
     /// <summary>Runs a child process and captures its combined output.</summary>
     /// <param name="exe">Executable name.</param>
     /// <param name="args">Argument string.</param>
-    /// <returns>The exit code and combined stdout+stderr.</returns>
+    /// <returns>The exit code and combined stdprintOut+stderr.</returns>
     private static async Task<(int Code, string Output)> ShAsync(string exe, string args)
     {
         var psi = new ProcessStartInfo(exe, args)
@@ -122,10 +148,10 @@ internal static class Gate
         try
         {
             using var p = Process.Start(psi)!;
-            var stdout = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            var stdprintOut = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
             var stderr = await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
             await p.WaitForExitAsync().ConfigureAwait(false);
-            return (p.ExitCode, stdout + stderr);
+            return (p.ExitCode, stdprintOut + stderr);
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException)
         {

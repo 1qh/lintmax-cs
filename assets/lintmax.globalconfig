@@ -320,3 +320,5 @@ roslynator_null_conditional_operator_new_line = after
 dotnet_diagnostic.RCS1260.severity = none
 # RCS1051 (parens on condition) conflicts SA1119 (no unnecessary parens) + CSharpier -> earned-disable
 dotnet_diagnostic.RCS1051.severity = none
+# IDE0090 (target-typed new) conflicts RCS1250 (explicit object creation) -> earned-disable
+dotnet_diagnostic.IDE0090.severity = none
