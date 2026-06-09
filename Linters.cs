@@ -9,6 +9,13 @@ namespace LintmaxCs;
 /// <summary>Runs every applicable non-C# file-type linter over the target tree.</summary>
 internal static class Linters
 {
+    private static readonly string[] ShellCheckFlags =
+    [
+        "--enable=all",
+        "--severity=style",
+        "--external-sources",
+    ];
+
     /// <summary>Runs the read-only file-type gate; prints findings; returns true when all pass.</summary>
     /// <param name="root">Target directory.</param>
     /// <param name="dprintConfig">Path to the bundled dprint config.</param>
@@ -71,12 +78,22 @@ internal static class Linters
         var shell = ShellFiles(root);
         var conditional = new (bool Active, string Exe, string[] Args)[]
         {
-            (shell.Length > 0, "shfmt", fix ? ["-w", "."] : ["-d", "."]),
-            (shell.Length > 0, "shellcheck", shell),
+            (
+                shell.Length > 0,
+                "shfmt",
+                fix
+                    ? ["-w", "-s", "-ci", "-bn", "-sr", "."]
+                    : ["-d", "-s", "-ci", "-bn", "-sr", "."]
+            ),
+            (shell.Length > 0, "shellcheck", [.. ShellCheckFlags, .. shell]),
             (
                 HasFiles(root, "*.ps1"),
                 "pwsh",
-                ["-NoProfile", "-Command", "Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit"]
+                [
+                    "-NoProfile",
+                    "-Command",
+                    "Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit -Severity Error,Warning,Information",
+                ]
             ),
             (
                 HasFiles(root, "*.xaml"),
