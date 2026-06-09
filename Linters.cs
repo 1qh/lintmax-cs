@@ -54,7 +54,11 @@ internal static class Linters
         }
     }
 
-    private static IEnumerable<(string Exe, string Args)> Applicable(string root, string dprintConfig, bool fix)
+    private static IEnumerable<(string Exe, string Args)> Applicable(
+        string root,
+        string dprintConfig,
+        bool fix
+    )
     {
         yield return ("editorconfig-checker", ".");
         yield return ("typos", fix ? ". --write-changes" : ".");
@@ -63,9 +67,21 @@ internal static class Linters
         {
             (HasFiles(root, "*.sh"), "shfmt", fix ? "-w ." : "-d ."),
             (HasFiles(root, "*.sh"), "shellcheck", ShellFiles(root)),
-            (HasFiles(root, "*.ps1"), "pwsh", "-NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""),
-            (HasFiles(root, "*.xaml"), "dotnet", fix ? "xstyler -r -d ." : "xstyler -r -d . --passive"),
-            (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", string.Empty),
+            (
+                HasFiles(root, "*.ps1"),
+                "pwsh",
+                "-NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""
+            ),
+            (
+                HasFiles(root, "*.xaml"),
+                "dotnet",
+                fix ? "xstyler -r -d ." : "xstyler -r -d . --passive"
+            ),
+            (
+                Directory.Exists(Path.Combine(root, ".github", "workflows")),
+                "actionlint",
+                string.Empty
+            ),
         };
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
@@ -77,8 +93,10 @@ internal static class Linters
     {
         var files = Directory
             .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
-            .Where(static f => !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal))
+            .Where(static f =>
+                !f.Contains("/obj/", StringComparison.Ordinal)
+                && !f.Contains("/bin/", StringComparison.Ordinal)
+            )
             .Select(f => $"\"{f}\"");
         return string.Join(' ', files);
     }
@@ -87,8 +105,10 @@ internal static class Linters
     {
         return Directory
             .EnumerateFiles(root, pattern, SearchOption.AllDirectories)
-            .Any(static f => !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal));
+            .Any(static f =>
+                !f.Contains("/obj/", StringComparison.Ordinal)
+                && !f.Contains("/bin/", StringComparison.Ordinal)
+            );
     }
 
     private static Task<(int Code, string Output)> ShAsync(string exe, string args, string cwd)
@@ -108,12 +128,18 @@ internal static class Linters
             try
             {
                 using var p = Process.Start(psi)!;
-                var output = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false)
+                var output =
+                    await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false)
                     + await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
                 await p.WaitForExitAsync().ConfigureAwait(false);
                 return (p.ExitCode, output);
             }
-            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+            catch (Exception e)
+                when (e
+                        is System.ComponentModel.Win32Exception
+                            or InvalidOperationException
+                            or IOException
+                )
             {
                 return (-1, e.ToString());
             }

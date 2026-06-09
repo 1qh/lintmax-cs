@@ -1,0 +1,29 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: pack
+        run: dotnet pack -c Release -o out
+      - name: push
+        env:
+          NUGET_KEY: ${{ secrets.NUGET_KEY }}
+        run: dotnet nuget push "out/*.nupkg" -k "$NUGET_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: prune releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-old-releases.sh
+      - name: prune ci runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP_RUN_ID: ${{ github.run_id }}
+        run: bash scripts/prune-ci-runs.sh

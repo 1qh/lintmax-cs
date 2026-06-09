@@ -35,12 +35,13 @@ internal static class Gate
             await AutofixAsync(root, props).ConfigureAwait(false);
         }
 
-        var cfgHash = Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(
-                await File.ReadAllBytesAsync(Path.Combine(AssetsDir, "lintmax.globalconfig"))
-                    .ConfigureAwait(false)
-            )
-        ) + ThisAssembly.Version;
+        var cfgHash =
+            Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    await File.ReadAllBytesAsync(Path.Combine(AssetsDir, "lintmax.globalconfig"))
+                        .ConfigureAwait(false)
+                )
+            ) + ThisAssembly.Version;
         var treeHash = await Cache.TreeHashAsync(root, cfgHash).ConfigureAwait(false);
         if (
             !fix
@@ -137,7 +138,9 @@ internal static class Gate
             _ = await Transform.StripAsync(root).ConfigureAwait(false);
             _ = await ShAsync(Dotnet, "restore").ConfigureAwait(false);
             _ = await ShAsync("csharpier", "format .").ConfigureAwait(false);
-            await Linters.FixAsync(root, Path.Combine(AssetsDir, "dprint.json")).ConfigureAwait(false);
+            await Linters
+                .FixAsync(root, Path.Combine(AssetsDir, "dprint.json"))
+                .ConfigureAwait(false);
             _ = await ShAsync("git", "add -A").ConfigureAwait(false);
             foreach (
                 var fx in new[]

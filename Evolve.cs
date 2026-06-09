@@ -12,16 +12,13 @@ internal static class Evolve
     private const string SkipStaleness = "LINTMAX_SKIP_STALENESS";
 
     /// <summary>Gets a value indicating whether the tool runs under CI.</summary>
-    internal static bool IsCi =>
-        Flag("CI") || Flag("GITHUB_ACTIONS");
+    internal static bool IsCi => Flag("CI") || Flag("GITHUB_ACTIONS");
 
     /// <summary>Gets a value indicating whether the green-cache is bypassed.</summary>
-    internal static bool NoCache =>
-        Flag("LINTMAX_NO_CACHE");
+    internal static bool NoCache => Flag("LINTMAX_NO_CACHE");
 
     /// <summary>Gets a value indicating whether per-phase timing prints.</summary>
-    internal static bool Timing =>
-        Flag("LINTMAX_TIMING");
+    internal static bool Timing => Flag("LINTMAX_TIMING");
 
     /// <summary>Updates the tool itself to latest under CI; no-op locally.</summary>
     /// <returns>A task.</returns>
@@ -46,11 +43,16 @@ internal static class Evolve
         }
 
         var (_, listed) = await ShAsync(
-            "dotnet",
-            $"list \"{root}\" package --outdated --highest-minor").ConfigureAwait(false);
+                "dotnet",
+                $"list \"{root}\" package --outdated --highest-minor"
+            )
+            .ConfigureAwait(false);
         var lines = listed
             .Split('\n')
-            .Where(static l => l.Contains("> ", StringComparison.Ordinal) && l.Contains("Analyzer", StringComparison.OrdinalIgnoreCase));
+            .Where(static l =>
+                l.Contains("> ", StringComparison.Ordinal)
+                && l.Contains("Analyzer", StringComparison.OrdinalIgnoreCase)
+            );
         foreach (var line in lines)
         {
             await Console.Error.WriteLineAsync($"stale: {line.Trim()}").ConfigureAwait(false);
@@ -83,7 +85,12 @@ internal static class Evolve
                 await p.WaitForExitAsync().ConfigureAwait(false);
                 return (p.ExitCode, output);
             }
-            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+            catch (Exception e)
+                when (e
+                        is System.ComponentModel.Win32Exception
+                            or InvalidOperationException
+                            or IOException
+                )
             {
                 return (-1, e.ToString());
             }
