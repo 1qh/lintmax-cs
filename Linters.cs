@@ -87,7 +87,7 @@ internal static class Linters
         yield return ("editorconfig-checker", ["."]);
         yield return ("gitleaks", ["dir", "--max-archive-depth", "100", "."]);
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
-        yield return ("dprint", [fix ? "fmt" : "check", "--config", dprintConfig]);
+        yield return ("dprint", [fix ? "fmt" : "check", "--allow-no-files", "--config", dprintConfig]);
         var shell = ShellFiles(root);
         var conditional = new (bool Active, string Exe, string[] Args)[]
         {
