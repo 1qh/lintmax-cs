@@ -89,10 +89,7 @@ internal static class Gate
             await Console.Error.WriteLineAsync(line.Trim()).ConfigureAwait(false);
         }
 
-        var dprint = await ShAsync("dprint", $"check --config \"{cfg}\"").ConfigureAwait(false);
-        var typos = await ShAsync("typos", ".").ConfigureAwait(false);
-        await PrintIfFailedAsync(dprint).ConfigureAwait(false);
-        await PrintIfFailedAsync(typos).ConfigureAwait(false);
+        var fileTypesOk = await Linters.CheckAsync(root, cfg).ConfigureAwait(false);
         var offenders = await Transform.OffendersAsync(root).ConfigureAwait(false);
         foreach (var f in offenders)
         {
@@ -101,20 +98,7 @@ internal static class Gate
                 .ConfigureAwait(false);
         }
 
-        return code is 0 && dprint.Code is 0 && typos.Code is 0 && offenders.Count is 0;
-    }
-
-    /// <summary>Prints a linter's output to stderr when it failed.</summary>
-    /// <param name="result">The linter exit code and output.</param>
-    /// <returns>A task.</returns>
-    private static async Task PrintIfFailedAsync((int Code, string Output) result)
-    {
-        if (result.Code is 0)
-        {
-            return;
-        }
-
-        await Console.Error.WriteLineAsync(result.Output.Trim()).ConfigureAwait(false);
+        return code is 0 && fileTypesOk && offenders.Count is 0;
     }
 
     /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>
@@ -178,7 +162,7 @@ internal static class Gate
     /// <summary>Runs a child process and captures its combined output.</summary>
     /// <param name="exe">Executable name.</param>
     /// <param name="args">Argument string.</param>
-    /// <returns>The exit code and combined stdprintOut+stderr.</returns>
+    /// <returns>The exit code and combined stdout+stderr.</returns>
     private static async Task<(int Code, string Output)> ShAsync(string exe, string args)
     {
         var psi = new ProcessStartInfo(exe, args)
@@ -190,10 +174,10 @@ internal static class Gate
         try
         {
             using var p = Process.Start(psi)!;
-            var stdprintOut = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            var stdout = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
             var stderr = await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
             await p.WaitForExitAsync().ConfigureAwait(false);
-            return (p.ExitCode, stdprintOut + stderr);
+            return (p.ExitCode, stdout + stderr);
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException)
         {

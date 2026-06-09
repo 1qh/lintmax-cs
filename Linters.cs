@@ -20,9 +20,8 @@ internal static class Linters
 
         async Task<bool> CoreAsync()
         {
-            var jobs = Applicable(root, dprintConfig, fix: false);
             var ok = true;
-            foreach (var (exe, args) in jobs)
+            foreach (var (exe, args) in Applicable(root, dprintConfig, fix: false))
             {
                 var (code, output) = await ShAsync(exe, args, root).ConfigureAwait(false);
                 if (code is not 0)
@@ -54,34 +53,31 @@ internal static class Linters
         }
     }
 
-    private static IEnumerable<(string Exe, string Args)> Applicable(
+    private static IEnumerable<(string Exe, string[] Args)> Applicable(
         string root,
         string dprintConfig,
         bool fix
     )
     {
-        yield return ("editorconfig-checker", ".");
-        yield return ("typos", fix ? ". --write-changes" : ".");
-        yield return ("dprint", $"{(fix ? "fmt" : "check")} --config \"{dprintConfig}\"");
-        var conditional = new (bool Active, string Exe, string Args)[]
+        yield return ("editorconfig-checker", ["."]);
+        yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
+        yield return ("dprint", [fix ? "fmt" : "check", "--config", dprintConfig]);
+        var shell = ShellFiles(root);
+        var conditional = new (bool Active, string Exe, string[] Args)[]
         {
-            (HasFiles(root, "*.sh"), "shfmt", fix ? "-w ." : "-d ."),
-            (HasFiles(root, "*.sh"), "shellcheck", ShellFiles(root)),
+            (shell.Length > 0, "shfmt", fix ? ["-w", "."] : ["-d", "."]),
+            (shell.Length > 0, "shellcheck", shell),
             (
                 HasFiles(root, "*.ps1"),
                 "pwsh",
-                "-NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""
+                ["-NoProfile", "-Command", "Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit"]
             ),
             (
                 HasFiles(root, "*.xaml"),
                 "dotnet",
-                fix ? "xstyler -r -d ." : "xstyler -r -d . --passive"
+                fix ? ["xstyler", "-r", "-d", "."] : ["xstyler", "-r", "-d", ".", "--passive"]
             ),
-            (
-                Directory.Exists(Path.Combine(root, ".github", "workflows")),
-                "actionlint",
-                string.Empty
-            ),
+            (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", []),
         };
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
@@ -89,16 +85,17 @@ internal static class Linters
         }
     }
 
-    private static string ShellFiles(string root)
+    private static string[] ShellFiles(string root)
     {
-        var files = Directory
-            .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
-            .Where(static f =>
-                !f.Contains("/obj/", StringComparison.Ordinal)
-                && !f.Contains("/bin/", StringComparison.Ordinal)
-            )
-            .Select(f => $"\"{f}\"");
-        return string.Join(' ', files);
+        return
+        [
+            .. Directory
+                .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
+                .Where(static f =>
+                    !f.Contains("/obj/", StringComparison.Ordinal)
+                    && !f.Contains("/bin/", StringComparison.Ordinal)
+                ),
+        ];
     }
 
     private static bool HasFiles(string root, string pattern)
@@ -111,20 +108,26 @@ internal static class Linters
             );
     }
 
-    private static Task<(int Code, string Output)> ShAsync(string exe, string args, string cwd)
+    private static Task<(int Code, string Output)> ShAsync(string exe, string[] args, string cwd)
     {
         ArgumentNullException.ThrowIfNull(exe);
+        ArgumentNullException.ThrowIfNull(args);
         return CoreAsync();
 
         async Task<(int Code, string Output)> CoreAsync()
         {
-            var psi = new ProcessStartInfo(exe, args)
+            var psi = new ProcessStartInfo(exe)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 WorkingDirectory = cwd,
             };
+            foreach (var arg in args)
+            {
+                psi.ArgumentList.Add(arg);
+            }
+
             try
             {
                 using var p = Process.Start(psi)!;
