@@ -2,5 +2,5 @@
 // Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
 // </copyright>
 
-[assembly: System.CLSCompliant(false)]
+[assembly: CLSCompliant(false)]
 [assembly: System.Runtime.InteropServices.ComVisible(false)]
