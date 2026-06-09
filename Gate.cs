@@ -35,24 +35,8 @@ internal static class Gate
             await AutofixAsync(root, props, token).ConfigureAwait(false);
         }
 
-        var cfgBytes = await File.ReadAllBytesAsync(
-                Path.Combine(AssetsDir, "lintmax.globalconfig"),
-                token
-            )
-            .ConfigureAwait(false);
-        var cfgHash =
-            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cfgBytes))
-            + ThisAssembly.Version;
-        var treeHash = await Cache.TreeHashAsync(root, cfgHash, token).ConfigureAwait(false);
-        if (
-            !fix
-            && !Evolve.NoCache
-            && string.Equals(
-                await Cache.LastGreenAsync(root, token).ConfigureAwait(false),
-                treeHash,
-                StringComparison.Ordinal
-            )
-        )
+        var (treeHash, hit) = await CacheStateAsync(root, fix, token).ConfigureAwait(false);
+        if (hit)
         {
             await Console.Out.WriteLineAsync("ok (cached)".AsMemory(), token).ConfigureAwait(false);
             return 0;
@@ -79,6 +63,32 @@ internal static class Gate
         }
 
         return 1;
+    }
+
+    private static async Task<(string TreeHash, bool Hit)> CacheStateAsync(
+        string root,
+        bool fix,
+        CancellationToken token
+    )
+    {
+        var cfgBytes = await File.ReadAllBytesAsync(
+                Path.Combine(AssetsDir, "lintmax.globalconfig"),
+                token
+            )
+            .ConfigureAwait(false);
+        var cfgHash =
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cfgBytes))
+            + ThisAssembly.Version;
+        var treeHash = await Cache.TreeHashAsync(root, cfgHash, token).ConfigureAwait(false);
+        var hit =
+            !fix
+            && !Evolve.NoCache
+            && string.Equals(
+                await Cache.LastGreenAsync(root, token).ConfigureAwait(false),
+                treeHash,
+                StringComparison.Ordinal
+            );
+        return (treeHash, hit);
     }
 
     /// <summary>Runs the C# gate plus the file-type linters, printing any findings.</summary>
