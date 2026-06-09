@@ -54,13 +54,20 @@ internal static class Gate
         try
         {
             _ = Sh("dotnet", "restore");
+            // safe text/layout fixers, then stage so later reverts preserve them
             _ = Sh("csharpier", "format .");
             _ = Sh("dprint", "fmt");
             _ = Sh("typos", "--write-changes");
+            _ = Sh("git", "add -A");
+            // analyzer code-fixes: keep if build stays green, else revert just this fixer to last-good
             foreach (var fx in new[] { "format style --severity info", "format analyzers --severity info" })
             {
                 _ = Sh("dotnet", fx);
-                if (Sh("dotnet", "build -c Release").Code != 0)
+                if (Sh("dotnet", "build -c Release").Code == 0)
+                {
+                    _ = Sh("git", "add -A");
+                }
+                else
                 {
                     _ = Sh("git", "checkout -- .");
                     Console.Error.WriteLine($"lintmax-cs: '{fx}' broke the build; skipped (hand-fix).");
