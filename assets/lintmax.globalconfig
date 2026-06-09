@@ -328,3 +328,10 @@ dotnet_diagnostic.RCS1223.severity = none
 dotnet_code_quality.CA1062.api_surface = public
 # MA0174 (record WITH explicit 'class') directly contradicts MA0175 (record WITHOUT) -> keep MA0175 (plain 'record')
 dotnet_diagnostic.MA0174.severity = none
+# align IDE0025 (expression-bodied) with RCS1016 (block when multi-line): expression only when single-line
+csharp_style_expression_bodied_properties = when_on_single_line:error
+csharp_style_expression_bodied_methods = when_on_single_line:error
+csharp_style_expression_bodied_accessors = when_on_single_line:error
+csharp_style_expression_bodied_indexers = when_on_single_line:error
+csharp_style_expression_bodied_lambdas = when_on_single_line:error
+csharp_style_expression_bodied_local_functions = when_on_single_line:error
