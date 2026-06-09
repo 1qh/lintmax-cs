@@ -20,10 +20,12 @@ internal static class Linters
 
         async Task<bool> CoreAsync()
         {
+            var tasks = Applicable(root, dprintConfig, fix: false)
+                .Select(job => ShAsync(job.Exe, job.Args, root));
+            var results = await Task.WhenAll(tasks).ConfigureAwait(false);
             var ok = true;
-            foreach (var (exe, args) in Applicable(root, dprintConfig, fix: false))
+            foreach (var (code, output) in results)
             {
-                var (code, output) = await ShAsync(exe, args, root).ConfigureAwait(false);
                 if (code is not 0)
                 {
                     ok = false;

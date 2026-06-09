@@ -57,7 +57,14 @@ internal static class Gate
             return 0;
         }
 
-        if (await RunLintersAsync(root, props).ConfigureAwait(false))
+        var watch = Evolve.Timing ? System.Diagnostics.Stopwatch.StartNew() : null;
+        var passed = await RunLintersAsync(root, props).ConfigureAwait(false);
+        if (watch is not null)
+        {
+            await Console.Error.WriteLineAsync($"timing: {watch.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}ms").ConfigureAwait(false);
+        }
+
+        if (passed)
         {
             await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
             await Evolve.StalenessAdvisoryAsync(root).ConfigureAwait(false);
