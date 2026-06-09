@@ -32,11 +32,22 @@ internal static class Gate
             await AutofixAsync(root, props).ConfigureAwait(false);
         }
 
+        var cfgHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(
+                Path.Combine(AssetsDir, "lintmax.globalconfig")).ConfigureAwait(false)));
+        var treeHash = await Cache.TreeHashAsync(root, cfgHash).ConfigureAwait(false);
+        if (!fix && string.Equals(await Cache.LastGreenAsync(root).ConfigureAwait(false), treeHash, StringComparison.Ordinal))
+        {
+            await Console.Out.WriteLineAsync("ok (cached)").ConfigureAwait(false);
+            return 0;
+        }
+
         var (code, output) = await ShAsync(
             Dotnet,
             $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror").ConfigureAwait(false);
         if (code is 0)
         {
+            await Cache.StoreGreenAsync(root, treeHash).ConfigureAwait(false);
             await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
             return 0;
         }

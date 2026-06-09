@@ -18,7 +18,7 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        var cmd = (args.Length > 0) ? args[0] : string.Empty;
+        var cmd = args.Length > 0 ? args[0] : string.Empty;
         return cmd switch
         {
             "fix" => await Gate.RunAsync(fix: true).ConfigureAwait(false),

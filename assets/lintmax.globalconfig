@@ -318,3 +318,5 @@ roslynator_arrow_token_new_line = before
 roslynator_equals_sign_new_line = after
 roslynator_null_conditional_operator_new_line = after
 dotnet_diagnostic.RCS1260.severity = none
+# RCS1051 (parens on condition) conflicts SA1119 (no unnecessary parens) + CSharpier -> earned-disable
+dotnet_diagnostic.RCS1051.severity = none
