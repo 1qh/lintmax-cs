@@ -1,5 +1,8 @@
+// <copyright file="Gate.cs" company="lintmax-cs contributors">
 // Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
+// </copyright>
 
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace LintmaxCs;
@@ -7,45 +10,50 @@ namespace LintmaxCs;
 /// <summary>Runs the configless max-strict gate against the current directory.</summary>
 internal static class Gate
 {
+    private const string Dotnet = "dotnet";
+
     private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
 
-    /// <summary>Runs the gate; when <paramref name="fix"/> is true, autofixes first.</summary>
-    public static int Run(bool fix)
+    /// <summary>Runs the gate, optionally autofixing first.</summary>
+    /// <param name="fix">When true, formats and autofixes before gating.</param>
+    /// <returns>Zero when clean, one otherwise.</returns>
+    internal static async Task<int> RunAsync(bool fix)
     {
         var root = Directory.GetCurrentDirectory();
         var props = Path.Combine(AssetsDir, "inject.props");
         if (!File.Exists(props))
         {
-            return Fail($"assets missing: {props}");
+            await Console.Error.WriteLineAsync($"lintmax-cs: assets missing: {props}").ConfigureAwait(false);
+            return 1;
         }
 
         if (fix)
         {
-            Autofix(root, props);
+            await AutofixAsync(root, props).ConfigureAwait(false);
         }
 
-        var (code, output) = Sh(
-            "dotnet",
-            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror"
-        );
-        if (code == 0)
+        var (code, output) = await ShAsync(
+            Dotnet,
+            $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror").ConfigureAwait(false);
+        if (code is 0)
         {
-            Console.Out.WriteLine("ok");
+            await Console.Out.WriteLineAsync("ok").ConfigureAwait(false);
             return 0;
         }
 
-        foreach (var line in output.Split('\n'))
+        foreach (var line in output.Split('\n').Where(l => l.Contains(": error ", StringComparison.Ordinal)))
         {
-            if (line.Contains(": error ", StringComparison.Ordinal))
-            {
-                Console.Error.WriteLine(line.Trim());
-            }
+            await Console.Error.WriteLineAsync(line.Trim()).ConfigureAwait(false);
         }
 
         return 1;
     }
 
-    private static void Autofix(string root, string props)
+    /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>
+    /// <param name="root">Target directory.</param>
+    /// <param name="props">Path to the injected props.</param>
+    /// <returns>A task.</returns>
+    private static async Task AutofixAsync(string root, string props)
     {
         var dbp = Path.Combine(root, "Directory.Build.props");
         var had = File.Exists(dbp);
@@ -55,35 +63,26 @@ internal static class Gate
             File.Move(dbp, bak, overwrite: true);
         }
 
-        File.WriteAllText(dbp, $"<Project><Import Project=\"{props}\" /></Project>");
+        await File.WriteAllTextAsync(dbp, $"<Project><Import Project=\"{props}\" /></Project>").ConfigureAwait(false);
         try
         {
-            _ = Sh("dotnet", "restore");
-            // safe text/layout fixers, then stage so later reverts preserve them
-            _ = Sh("csharpier", "format .");
-            _ = Sh("dprint", "fmt");
-            _ = Sh("typos", "--write-changes");
-            _ = Sh("git", "add -A");
-            // analyzer code-fixes: keep if build stays green, else revert just this fixer to last-good
-            foreach (
-                var fx in new[]
-                {
-                    "format style --severity info",
-                    "format analyzers --severity info",
-                }
-            )
+            _ = await ShAsync(Dotnet, "restore").ConfigureAwait(false);
+            _ = await ShAsync("csharpier", "format .").ConfigureAwait(false);
+            _ = await ShAsync("dprint", "fmt").ConfigureAwait(false);
+            _ = await ShAsync("typos", "--write-changes").ConfigureAwait(false);
+            _ = await ShAsync("git", "add -A").ConfigureAwait(false);
+            foreach (var fx in new[] { "format style --severity info", "format analyzers --severity info" })
             {
-                _ = Sh("dotnet", fx);
-                if (Sh("dotnet", "build -c Release").Code == 0)
+                _ = await ShAsync(Dotnet, fx).ConfigureAwait(false);
+                var (vcode, _) = await ShAsync(Dotnet, "build -c Release").ConfigureAwait(false);
+                if (vcode is 0)
                 {
-                    _ = Sh("git", "add -A");
+                    _ = await ShAsync("git", "add -A").ConfigureAwait(false);
                 }
                 else
                 {
-                    _ = Sh("git", "checkout -- .");
-                    Console.Error.WriteLine(
-                        $"lintmax-cs: '{fx}' broke the build; skipped (hand-fix)."
-                    );
+                    _ = await ShAsync("git", "checkout -- .").ConfigureAwait(false);
+                    await Console.Error.WriteLineAsync($"lintmax-cs: '{fx}' broke the build; skipped.").ConfigureAwait(false);
                 }
             }
         }
@@ -97,7 +96,11 @@ internal static class Gate
         }
     }
 
-    private static (int Code, string Output) Sh(string exe, string args)
+    /// <summary>Runs a child process and captures its combined output.</summary>
+    /// <param name="exe">Executable name.</param>
+    /// <param name="args">Argument string.</param>
+    /// <returns>The exit code and combined stdout+stderr.</returns>
+    private static async Task<(int Code, string Output)> ShAsync(string exe, string args)
     {
         var psi = new ProcessStartInfo(exe, args)
         {
@@ -108,19 +111,14 @@ internal static class Gate
         try
         {
             using var p = Process.Start(psi)!;
-            var o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-            p.WaitForExit();
-            return (p.ExitCode, o);
+            var stdout = await p.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            var stderr = await p.StandardError.ReadToEndAsync().ConfigureAwait(false);
+            await p.WaitForExitAsync().ConfigureAwait(false);
+            return (p.ExitCode, stdout + stderr);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException)
         {
-            return (-1, e.Message);
+            return (-1, e.ToString());
         }
-    }
-
-    private static int Fail(string msg)
-    {
-        Console.Error.WriteLine($"lintmax-cs: {msg}");
-        return 1;
     }
 }
