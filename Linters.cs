@@ -16,6 +16,12 @@ internal static class Linters
         "--external-sources",
     ];
     private static readonly string[] XmlNoOut = ["--noout"];
+    private static readonly string[] HadolintFlags =
+    [
+        "--strict-labels",
+        "--failure-threshold",
+        "style",
+    ];
     private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
 
     private static string MarkdownConfig =>
@@ -80,7 +86,7 @@ internal static class Linters
     )
     {
         yield return ("editorconfig-checker", ["."]);
-        yield return ("gitleaks", ["dir", "."]);
+        yield return ("gitleaks", ["dir", "--max-archive-depth", "100", "."]);
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
         yield return ("dprint", [fix ? "fmt" : "check", "--config", dprintConfig]);
         var shell = ShellFiles(root);
@@ -122,7 +128,7 @@ internal static class Linters
                 ["-c", YamlConfig, "--strict", "."]
             ),
             (HasFiles(root, "*.toml"), "taplo", ["lint"]),
-            (DockerFiles(root).Length > 0, "hadolint", DockerFiles(root)),
+            (DockerFiles(root).Length > 0, "hadolint", [.. HadolintFlags, .. DockerFiles(root)]),
             (XmlFiles(root).Length > 0, "xmllint", [.. XmlNoOut, .. XmlFiles(root)]),
             (
                 WebFiles(root),

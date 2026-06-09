@@ -118,6 +118,26 @@ internal static class Gate
             await Console.Error.WriteLineAsync(line.Trim().AsMemory(), token).ConfigureAwait(false);
         }
 
+        var (_, deprecatedOut) = await ShAsync(
+                Dotnet,
+                "list package --deprecated --format json",
+                token
+            )
+            .ConfigureAwait(false);
+        var noDeprecated = !deprecatedOut.Contains(
+            "\"deprecationReasons\"",
+            StringComparison.Ordinal
+        );
+        if (!noDeprecated)
+        {
+            await Console
+                .Error.WriteLineAsync(
+                    "deprecated NuGet package(s) present (dotnet list package --deprecated)".AsMemory(),
+                    token
+                )
+                .ConfigureAwait(false);
+        }
+
         var fileTypesOk = await Linters.CheckAsync(root, cfg, token).ConfigureAwait(false);
         var offenders = await Transform.OffendersAsync(root, token).ConfigureAwait(false);
         foreach (var f in offenders)
@@ -127,7 +147,7 @@ internal static class Gate
                 .ConfigureAwait(false);
         }
 
-        return code is 0 && fileTypesOk && offenders.Count is 0;
+        return code is 0 && fileTypesOk && noDeprecated && offenders.Count is 0;
     }
 
     /// <summary>Applies safe then build-verified fixers, reverting any that break the build.</summary>
