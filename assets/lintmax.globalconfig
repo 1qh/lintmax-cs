@@ -338,3 +338,5 @@ csharp_style_expression_bodied_local_functions = when_on_single_line:error
 # RCS1016 (Roslynator body-style) overlaps + oscillates vs IDE0022/IDE0025 (Roslyn, aligned to when_on_single_line)
 # on csharpier-width-boundary members -> IDE rules own body-style; earned-disable RCS1016.
 dotnet_diagnostic.RCS1016.severity = none
+# S4018 (all type params must be inferable) flags the idiomatic explicit-result-type generic (e.g. Deserialize<T>) -> earned-disable
+dotnet_diagnostic.S4018.severity = none
