@@ -20,7 +20,6 @@ dotnet_diagnostic.CA1005.severity = error
 dotnet_diagnostic.CA1014.severity = error
 dotnet_diagnostic.CA1060.severity = error
 dotnet_diagnostic.CA1021.severity = error
-dotnet_diagnostic.CA1501.severity = error
 dotnet_diagnostic.CA1502.severity = error
 dotnet_diagnostic.CA1505.severity = error
 dotnet_diagnostic.CA1506.severity = error
@@ -346,3 +345,6 @@ dotnet_diagnostic.CA5392.severity = none
 # CA1515 (make app types internal) is impossible for WinUI XAML root types: the x:Class codegen emits a public partial,
 # so an internal code-behind is CS0262 (conflicting accessibility) -> earned-disable.
 dotnet_diagnostic.CA1515.severity = none
+# CA1501 (object hierarchy depth) is unavoidable for WinUI: Page/Window/Control are inherently 6 levels deep
+# (Page->UserControl->Control->FrameworkElement->UIElement->DependencyObject) -> earned-disable (framework-fixed).
+dotnet_diagnostic.CA1501.severity = none
