@@ -91,13 +91,11 @@ internal static class Linters
     )
     {
         yield return ("editorconfig-checker", ["."]);
-        yield return (
-            "gitleaks",
-            ["dir", "--max-archive-depth", "100", ConfigFlag, GitleaksConfig, "."]
-        );
+        yield return ("gitleaks", GitleaksArgs());
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
         yield return ("dprint", DprintArgs(root, dprintConfig, fix));
         var shell = ShellFiles(root);
+        var xaml = XamlFiles(root);
         var conditional = new (bool Active, string Exe, string[] Args)[]
         {
             (
@@ -118,9 +116,9 @@ internal static class Linters
                 ]
             ),
             (
-                HasFiles(root, "*.xaml"),
+                xaml.Length > 0,
                 "xstyler",
-                fix ? ["-r", "-d", "."] : ["-r", "-d", ".", "--passive"]
+                fix ? ["-f", .. xaml] : ["-f", .. xaml, "--passive"]
             ),
             (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", []),
             (
@@ -193,6 +191,19 @@ internal static class Linters
         [
             .. Directory
                 .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
+                .Where(static f => !PathUtil.IsExcluded(f)),
+        ];
+    }
+
+    private static string[] GitleaksArgs() =>
+        ["dir", "--max-archive-depth", "100", ConfigFlag, GitleaksConfig, "."];
+
+    private static string[] XamlFiles(string root)
+    {
+        return
+        [
+            .. Directory
+                .EnumerateFiles(root, "*.xaml", SearchOption.AllDirectories)
                 .Where(static f => !PathUtil.IsExcluded(f)),
         ];
     }
