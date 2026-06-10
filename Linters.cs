@@ -9,6 +9,9 @@ namespace LintmaxCs;
 /// <summary>Runs every applicable non-C# file-type linter over the target tree.</summary>
 internal static class Linters
 {
+    private const string ConfigFlag = "--config";
+    private const string AssetsFolder = "assets";
+
     private static readonly string[] ShellCheckFlags =
     [
         "--enable=all",
@@ -21,12 +24,15 @@ internal static class Linters
         "--failure-threshold",
         "style",
     ];
-    private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
+    private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, AssetsFolder);
+
+    private static string GitleaksConfig =>
+        Path.Combine(AppContext.BaseDirectory, AssetsFolder, "gitleaks.toml");
 
     private static string MarkdownConfig =>
-        Path.Combine(AppContext.BaseDirectory, "assets", ".markdownlint.jsonc");
+        Path.Combine(AppContext.BaseDirectory, AssetsFolder, ".markdownlint.jsonc");
     private static string YamlConfig =>
-        Path.Combine(AppContext.BaseDirectory, "assets", ".yamllint.yaml");
+        Path.Combine(AppContext.BaseDirectory, AssetsFolder, ".yamllint.yaml");
 
     /// <summary>Runs the read-only file-type gate; prints findings; returns true when all pass.</summary>
     /// <param name="root">Target directory.</param>
@@ -85,7 +91,10 @@ internal static class Linters
     )
     {
         yield return ("editorconfig-checker", ["."]);
-        yield return ("gitleaks", ["dir", "--max-archive-depth", "100", "."]);
+        yield return (
+            "gitleaks",
+            ["dir", "--max-archive-depth", "100", ConfigFlag, GitleaksConfig, "."]
+        );
         yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
         yield return ("dprint", DprintArgs(root, dprintConfig, fix));
         var shell = ShellFiles(root);
@@ -118,8 +127,8 @@ internal static class Linters
                 HasFiles(root, "*.md"),
                 "markdownlint-cli2",
                 fix
-                    ? ["--config", MarkdownConfig, "--fix", "**/*.md"]
-                    : ["--config", MarkdownConfig, "**/*.md"]
+                    ? [ConfigFlag, MarkdownConfig, "--fix", "**/*.md"]
+                    : [ConfigFlag, MarkdownConfig, "**/*.md"]
             ),
             (
                 HasFiles(root, "*.yml") || HasFiles(root, "*.yaml"),
@@ -190,7 +199,13 @@ internal static class Linters
 
     private static string[] DprintArgs(string root, string dprintConfig, bool fix)
     {
-        var args = new List<string> { fix ? "fmt" : "check", "--allow-no-files", "--config", dprintConfig };
+        var args = new List<string>
+        {
+            fix ? "fmt" : "check",
+            "--allow-no-files",
+            ConfigFlag,
+            dprintConfig,
+        };
         foreach (var glob in IgnoreGlobs(root))
         {
             args.Add("--excludes");
@@ -208,7 +223,12 @@ internal static class Linters
         var file = Path.Combine(root, ".lintmaxignore");
         return !File.Exists(file)
             ? []
-            : [.. File.ReadLines(file).Select(static l => l.Trim()).Where(static l => l.Length > 0 && !l.StartsWith('#'))];
+            :
+            [
+                .. File.ReadLines(file)
+                    .Select(static l => l.Trim())
+                    .Where(static l => l.Length > 0 && !l.StartsWith('#')),
+            ];
     }
 
     private static bool HasFiles(string root, string pattern)

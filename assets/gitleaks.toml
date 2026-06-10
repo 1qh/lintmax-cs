@@ -1,0 +1,9 @@
+title = "lintmax-cs"
+[extend]
+useDefault = true
+[allowlist]
+description = "exclude build output, vendored deps, and vcs internals from secret scanning"
+paths = [
+  '''(^|/)(bin|obj|node_modules)/''',
+  '''(^|/)\.git/''',
+]
