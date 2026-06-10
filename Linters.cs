@@ -119,8 +119,8 @@ internal static class Linters
             ),
             (
                 HasFiles(root, "*.xaml"),
-                "dotnet",
-                fix ? ["xstyler", "-r", "-d", "."] : ["xstyler", "-r", "-d", ".", "--passive"]
+                "xstyler",
+                fix ? ["-r", "-d", "."] : ["-r", "-d", ".", "--passive"]
             ),
             (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", []),
             (
