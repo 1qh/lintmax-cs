@@ -340,3 +340,6 @@ csharp_style_expression_bodied_local_functions = when_on_single_line:error
 dotnet_diagnostic.RCS1016.severity = none
 # S4018 (all type params must be inferable) flags the idiomatic explicit-result-type generic (e.g. Deserialize<T>) -> earned-disable
 dotnet_diagnostic.S4018.severity = none
+# CA5392 fires only on the SDK-generated WinUI unpackaged bootstrap (WindowsAppRuntime_EnsureIsLoaded P/Invoke);
+# the app writes no hand-rolled DllImport -> earned-disable (revisit if raw P/Invoke is added).
+dotnet_diagnostic.CA5392.severity = none
