@@ -348,3 +348,6 @@ dotnet_diagnostic.CA1515.severity = none
 # CA1501 (object hierarchy depth) is unavoidable for WinUI: Page/Window/Control are inherently 6 levels deep
 # (Page->UserControl->Control->FrameworkElement->UIElement->DependencyObject) -> earned-disable (framework-fixed).
 dotnet_diagnostic.CA1501.severity = none
+# RCS1250 (explicit object/collection creation) conflicts with IDE0028/IDE0300 (use collection expression []) and
+# overlaps IDE0090 on object-creation style -> the IDE rules own creation style; earned-disable RCS1250.
+dotnet_diagnostic.RCS1250.severity = none
