@@ -10,11 +10,12 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL }}
     steps:
       - uses: actions/checkout@v4
-      - name: pack + install lintmax-cs from source
+      - name: pack + install lintmax-cs (outside checkout)
         shell: powershell
         run: |
           dotnet pack -c Release -o pack
-          dotnet tool install --tool-path lmtool lintmax-cs --add-source pack
+          if (Test-Path C:\lmtool-ci) { Remove-Item C:\lmtool-ci -Recurse -Force }
+          dotnet tool install --tool-path C:\lmtool-ci lintmax-cs --add-source pack
       - name: check (dogfood)
         shell: powershell
-        run: .\lmtool\lintmax-cs check
+        run: C:\lmtool-ci\lintmax-cs check
