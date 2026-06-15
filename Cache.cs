@@ -79,7 +79,13 @@ internal static class Cache
     private static bool IsTracked(string f)
     {
         ArgumentNullException.ThrowIfNull(f);
-        return !PathUtil.IsExcluded(f) && TrackedExtensions.Contains(Path.GetExtension(f));
+
+        // reason: .lintmaxignore has no extension but changes the gate's exclusion set, so it must invalidate the green cache.
+        return !PathUtil.IsExcluded(f)
+            && (
+                TrackedExtensions.Contains(Path.GetExtension(f))
+                || string.Equals(Path.GetFileName(f), ".lintmaxignore", StringComparison.Ordinal)
+            );
     }
 
     private static string CachePath(string root)
