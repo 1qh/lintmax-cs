@@ -281,9 +281,10 @@ internal static class Linters
                 // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
                 var outTask = p.StandardOutput.ReadToEndAsync(token);
                 var errTask = p.StandardError.ReadToEndAsync(token);
-                await Task.WhenAll(outTask, errTask).ConfigureAwait(false);
+                var stdout = await outTask.ConfigureAwait(false);
+                var stderr = await errTask.ConfigureAwait(false);
                 await p.WaitForExitAsync(token).ConfigureAwait(false);
-                return (p.ExitCode, await outTask.ConfigureAwait(false) + await errTask.ConfigureAwait(false));
+                return (p.ExitCode, stdout + stderr);
             }
             catch (Exception e)
                 when (e

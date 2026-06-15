@@ -94,9 +94,10 @@ internal static class Evolve
                 // reason: drain stderr concurrently even though only stdout is used — an undrained redirected stderr deadlocks the child once its pipe buffer fills.
                 var outTask = p.StandardOutput.ReadToEndAsync(token);
                 var errTask = p.StandardError.ReadToEndAsync(token);
-                await Task.WhenAll(outTask, errTask).ConfigureAwait(false);
+                var stdout = await outTask.ConfigureAwait(false);
+                _ = await errTask.ConfigureAwait(false);
                 await p.WaitForExitAsync(token).ConfigureAwait(false);
-                return (p.ExitCode, await outTask.ConfigureAwait(false));
+                return (p.ExitCode, stdout);
             }
             catch (Exception e)
                 when (e
