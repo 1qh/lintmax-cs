@@ -1,4 +1,5 @@
 bin/
 obj/
+pack/
 *.lintmaxbak
 Directory.Build.props
