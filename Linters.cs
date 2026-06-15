@@ -3,6 +3,8 @@
 // </copyright>
 
 using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace LintmaxCs;
 
@@ -23,6 +25,19 @@ internal static class Linters
         "--strict-labels",
         "--failure-threshold",
         "style",
+    ];
+    private static readonly string[] WebExt =
+    [
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".css",
+        ".scss",
+        ".html",
+        ".graphql",
     ];
     private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, AssetsFolder);
 
@@ -90,12 +105,14 @@ internal static class Linters
         bool fix
     )
     {
-        yield return ("editorconfig-checker", ["."]);
+        var ignore = IgnoreGlobs(root);
+        yield return ("editorconfig-checker", EditorconfigArgs(ignore));
         yield return ("gitleaks", GitleaksArgs());
-        yield return ("typos", fix ? [".", "--write-changes"] : ["."]);
-        yield return ("dprint", DprintArgs(root, dprintConfig, fix));
+        yield return ("typos", TyposArgs(ignore, fix));
+        yield return ("dprint", DprintArgs(dprintConfig, ignore, fix));
         var shell = ShellFiles(root);
         var xaml = XamlFiles(root);
+        var web = WebFileList(root);
         var conditional = new (bool Active, string Exe, string[] Args)[]
         {
             (
@@ -125,22 +142,22 @@ internal static class Linters
                 HasFiles(root, "*.md"),
                 "markdownlint-cli2",
                 fix
-                    ? [ConfigFlag, MarkdownConfig, "--fix", "**/*.md"]
-                    : [ConfigFlag, MarkdownConfig, "**/*.md"]
+                    ? [ConfigFlag, MarkdownConfig, "--fix", "**/*.md", .. NegationGlobs(ignore)]
+                    : [ConfigFlag, MarkdownConfig, "**/*.md", .. NegationGlobs(ignore)]
             ),
             (
                 HasFiles(root, "*.yml") || HasFiles(root, "*.yaml"),
                 "yamllint",
-                ["-c", YamlConfig, "--strict", "."]
+                ["-c", YamlConfig, "--strict", .. YamlFiles(root)]
             ),
             (HasFiles(root, "*.toml"), "taplo", ["lint"]),
             (DockerFiles(root).Length > 0, "hadolint", [.. HadolintFlags, .. DockerFiles(root)]),
             (
-                WebFiles(root),
+                web.Length > 0,
                 "biome",
                 fix
-                    ? ["check", "--write", "--config-path", AssetsDir, "."]
-                    : ["check", "--config-path", AssetsDir, "."]
+                    ? ["check", "--write", "--config-path", AssetsDir, .. web]
+                    : ["check", "--config-path", AssetsDir, .. web]
             ),
         };
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
@@ -149,23 +166,11 @@ internal static class Linters
         }
     }
 
-    private static bool WebFiles(string root)
-    {
-        string[] ext =
+    private static string[] WebFileList(string root) =>
         [
-            ".js",
-            ".mjs",
-            ".cjs",
-            ".jsx",
-            ".ts",
-            ".tsx",
-            ".css",
-            ".scss",
-            ".html",
-            ".graphql",
+            .. Files(root)
+                .Where(static f => WebExt.Contains(Path.GetExtension(f), StringComparer.Ordinal)),
         ];
-        return Files(root).Any(f => ext.Contains(Path.GetExtension(f), StringComparer.Ordinal));
-    }
 
     private static string[] DockerFiles(string root)
     {
@@ -180,18 +185,32 @@ internal static class Linters
 
     private static IEnumerable<string> Files(string root)
     {
+        var ignored = Ignored(root);
         return Directory
             .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(static f => !PathUtil.IsExcluded(f));
+            .Where(f => !ignored(f));
     }
 
     private static string[] ShellFiles(string root)
     {
+        var ignored = Ignored(root);
         return
         [
             .. Directory
                 .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
-                .Where(static f => !PathUtil.IsExcluded(f)),
+                .Where(f => !ignored(f)),
+        ];
+    }
+
+    private static string[] YamlFiles(string root)
+    {
+        var ignored = Ignored(root);
+        return
+        [
+            .. Directory
+                .EnumerateFiles(root, "*.yml", SearchOption.AllDirectories)
+                .Concat(Directory.EnumerateFiles(root, "*.yaml", SearchOption.AllDirectories))
+                .Where(f => !ignored(f)),
         ];
     }
 
@@ -200,15 +219,20 @@ internal static class Linters
 
     private static string[] XamlFiles(string root)
     {
+        var ignored = Ignored(root);
         return
         [
             .. Directory
                 .EnumerateFiles(root, "*.xaml", SearchOption.AllDirectories)
-                .Where(static f => !PathUtil.IsExcluded(f)),
+                .Where(f => !ignored(f)),
         ];
     }
 
-    private static string[] DprintArgs(string root, string dprintConfig, bool fix)
+    private static string[] DprintArgs(
+        string dprintConfig,
+        IReadOnlyCollection<string> ignore,
+        bool fix
+    )
     {
         var args = new List<string>
         {
@@ -217,13 +241,118 @@ internal static class Linters
             ConfigFlag,
             dprintConfig,
         };
-        foreach (var glob in IgnoreGlobs(root))
+
+        // reason: dprint --excludes is variadic — repeating the flag errors "cannot be used multiple times"; pass it once with all globs.
+        if (ignore.Count > 0)
         {
             args.Add("--excludes");
+            args.AddRange(ignore);
+        }
+
+        return [.. args];
+    }
+
+    private static string[] TyposArgs(IEnumerable<string> ignore, bool fix)
+    {
+        var args = new List<string> { "." };
+        if (fix)
+        {
+            args.Add("--write-changes");
+        }
+
+        foreach (var glob in ignore)
+        {
+            args.Add("--exclude");
             args.Add(glob);
         }
 
         return [.. args];
+    }
+
+    private static string[] EditorconfigArgs(IReadOnlyCollection<string> ignore)
+    {
+        return ignore.Count is 0
+            ? ["."]
+            : ["-exclude", string.Join('|', ignore.Select(GlobToRegex)), "."];
+    }
+
+    private static string[] NegationGlobs(IEnumerable<string> ignore) =>
+        [.. ignore.Select(static g => "!" + g)];
+
+    /// <summary>Builds a predicate skipping generated/VCS paths plus the consumer's .lintmaxignore globs.</summary>
+    /// <param name="root">Target directory.</param>
+    /// <returns>A predicate true for paths to skip.</returns>
+    private static Func<string, bool> Ignored(string root)
+    {
+        var globs = IgnoreGlobs(root);
+        if (globs.Count is 0)
+        {
+            return PathUtil.IsExcluded;
+        }
+
+        var regexes = globs
+            .Select(static g => new Regex(
+                GlobToRegex(g),
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1)
+            ))
+            .ToArray();
+        return f =>
+        {
+            if (PathUtil.IsExcluded(f))
+            {
+                return true;
+            }
+
+            var rel = Path.GetRelativePath(root, f).Replace('\\', '/');
+            return Array.Exists(regexes, r => r.IsMatch(rel));
+        };
+    }
+
+    /// <summary>Translates a gitignore-style glob (supporting * and **) to an anchored regex.</summary>
+    /// <param name="glob">The glob pattern.</param>
+    /// <returns>A regex string matching the path or anything beneath it.</returns>
+    private static string GlobToRegex(string glob)
+    {
+        const string RegexSpecial = @"\.()+|^$[]{}";
+        const int DoubleStarLength = 2;
+        var sb = new StringBuilder("^");
+        var i = 0;
+        while (i < glob.Length)
+        {
+            var c = glob[i];
+            if (c is '*' && i + 1 < glob.Length && glob[i + 1] is '*')
+            {
+                _ = sb.Append(".*");
+                i += DoubleStarLength;
+                if (i < glob.Length && glob[i] is '/')
+                {
+                    i++;
+                }
+            }
+            else if (c is '*')
+            {
+                _ = sb.Append("[^/]*");
+                i++;
+            }
+            else if (c is '?')
+            {
+                _ = sb.Append('.');
+                i++;
+            }
+            else
+            {
+                if (RegexSpecial.Contains(c, StringComparison.Ordinal))
+                {
+                    _ = sb.Append('\\');
+                }
+
+                _ = sb.Append(c);
+                i++;
+            }
+        }
+
+        return sb.Append("(/.*)?$").ToString();
     }
 
     /// <summary>Reads consumer generated-path excludes from .lintmaxignore (one glob per line).</summary>
@@ -244,9 +373,10 @@ internal static class Linters
 
     private static bool HasFiles(string root, string pattern)
     {
+        var ignored = Ignored(root);
         return Directory
             .EnumerateFiles(root, pattern, SearchOption.AllDirectories)
-            .Any(static f => !PathUtil.IsExcluded(f));
+            .Any(f => !ignored(f));
     }
 
     private static Task<(int Code, string Output)> ShAsync(
