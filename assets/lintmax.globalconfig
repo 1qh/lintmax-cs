@@ -329,6 +329,8 @@ dotnet_code_quality.CA1062.api_surface = public
 dotnet_diagnostic.MA0174.severity = none
 # MA0211 (multi-line XML summary) directly contradicts MA0177 (single-line when possible), which the codebase follows -> keep MA0177, disable MA0211
 dotnet_diagnostic.MA0211.severity = none
+# MVVMTK0056 recommends [ObservableProperty] partial properties over the field-keyword semi-auto pattern (`get; set => SetProperty(ref field, value)`); a style/micro-opt suggestion, not correctness. Consumers pick their MVVM authoring style (lintmax stays general-purpose); forcing it rewrites working semi-auto/custom-setter properties for zero functional change.
+dotnet_diagnostic.MVVMTK0056.severity = none
 # align IDE0025 (expression-bodied) with RCS1016 (block when multi-line): expression only when single-line
 csharp_style_expression_bodied_properties = when_on_single_line:error
 csharp_style_expression_bodied_methods = when_on_single_line:error
