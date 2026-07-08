@@ -79,17 +79,29 @@ internal static class Evolve
             }
         }
 
-        // reason: prerelease excluded (compares to latest STABLE) so a -dev/-rc never forces a bump; matches the no-prerelease rule.
-        var (_, json) = await ShAsync(
-                "dotnet",
-                $"list \"{root}\" package --outdated --format json",
-                token
-            )
-            .ConfigureAwait(false);
-        var stale = ParseStale(json);
+        // reason: scan PER-PROJECT not `dotnet list <dir>` (dir form self-restores + reads-stale, giving 0 projects/false-stale); prerelease excluded so only latest STABLE gates.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var stale = new List<string>();
+        foreach (var proj in ProjectFiles(root))
+        {
+            var (_, json) = await ShAsync(
+                    "dotnet",
+                    $"list \"{proj}\" package --outdated --format json",
+                    token
+                )
+                .ConfigureAwait(false);
+            stale.AddRange(ParseStale(json).Where(seen.Add));
+        }
+
         await WriteStaleCacheAsync(root, manifestKey, stale, token).ConfigureAwait(false);
         return stale;
     }
+
+    private static IEnumerable<string> ProjectFiles(string root) =>
+        Directory
+            .EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+            .Where(static f => !PathUtil.IsExcluded(f))
+            .Order(StringComparer.Ordinal);
 
     // reason: CA1859 wants a concrete List for perf but CA1002 forbids returning List<T>; keep the IReadOnlyList abstraction.
 #pragma warning disable CA1859
