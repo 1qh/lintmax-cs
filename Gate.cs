@@ -38,6 +38,11 @@ internal static class Gate
         var (treeHash, hit) = await CacheStateAsync(root, fix, token).ConfigureAwait(false);
         if (hit)
         {
+            if (!await StalenessGateAsync(root, token).ConfigureAwait(false))
+            {
+                return 1;
+            }
+
             await Console.Out.WriteLineAsync("ok (cached)".AsMemory(), token).ConfigureAwait(false);
             return 0;
         }
@@ -57,12 +62,43 @@ internal static class Gate
         if (passed)
         {
             await Cache.StoreGreenAsync(root, treeHash, token).ConfigureAwait(false);
-            await Evolve.StalenessAdvisoryAsync(root, token).ConfigureAwait(false);
+            if (!await StalenessGateAsync(root, token).ConfigureAwait(false))
+            {
+                return 1;
+            }
+
             await Console.Out.WriteLineAsync("ok".AsMemory(), token).ConfigureAwait(false);
             return 0;
         }
 
         return 1;
+    }
+
+    /// <summary>Fails the gate when any direct dependency lags latest (Latest-only enforcement).</summary>
+    /// <param name="root">Target directory.</param>
+    /// <param name="token">Cancellation token.</param>
+    /// <returns>True when every dependency is current; false (with stderr detail) when any is stale.</returns>
+    private static async Task<bool> StalenessGateAsync(string root, CancellationToken token)
+    {
+        var stale = await Evolve.StalenessAsync(root, token).ConfigureAwait(false);
+        if (stale.Count is 0)
+        {
+            return true;
+        }
+
+        foreach (var s in stale)
+        {
+            await Console.Error.WriteLineAsync($"stale: {s}".AsMemory(), token).ConfigureAwait(false);
+        }
+
+        var count = stale.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await Console
+            .Error.WriteLineAsync(
+                $"{count} direct dep(s) behind latest; bump to latest or set LINTMAX_SKIP_STALENESS=1".AsMemory(),
+                token
+            )
+            .ConfigureAwait(false);
+        return false;
     }
 
     private static async Task<(string TreeHash, bool Hit)> CacheStateAsync(

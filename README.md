@@ -30,7 +30,7 @@ lintmax-cs rules     # list every active rule
 - Analyzer packs float at latest (`*`), refreshed on restore.
 - Self-update under CI (`dotnet tool update -g lintmax-cs`).
 - Green-tree-hash cache: unchanged tree + version → `ok (cached)`.
-- Staleness advisory: outdated analyzer packages printed to stderr (never fails the gate).
+- Staleness gate: any DIRECT dependency behind its latest stable release HARD-FAILS the gate (Latest-only; parity with lintmax-go). TTL-cached locally, always fresh in CI.
 - Bypass with `LINTMAX_NO_CACHE=1`; skip advisory with `LINTMAX_SKIP_STALENESS=1`.
 
 ## What runs
