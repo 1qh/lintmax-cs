@@ -14,6 +14,7 @@ namespace LintmaxCs;
 internal static class Evolve
 {
     private const string SkipStaleness = "LINTMAX_SKIP_STALENESS";
+    private const string StalenessAllow = "LINTMAX_STALENESS_ALLOW";
     private const int StalenessTtlHours = 6;
     private const int StaleCacheHeaderLines = 2;
 
@@ -106,10 +107,17 @@ internal static class Evolve
             return [];
         }
 
+        var allowed = new HashSet<string>(
+            (Environment.GetEnvironmentVariable(StalenessAllow) ?? string.Empty).Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            ),
+            StringComparer.OrdinalIgnoreCase
+        );
         var stale = new List<string>();
         foreach (var pkg in TopLevelPackages(projects))
         {
-            var entry = StaleEntry(pkg);
+            var entry = StaleEntry(pkg, allowed);
             if (entry is not null && !stale.Contains(entry, StringComparer.Ordinal))
             {
                 stale.Add(entry);
@@ -154,9 +162,14 @@ internal static class Evolve
     }
 #pragma warning restore IDISP004
 
-    private static string? StaleEntry(JsonElement pkg)
+    private static string? StaleEntry(JsonElement pkg, ICollection<string> allowed)
     {
         var id = Str(pkg, "id");
+        if (allowed.Contains(id))
+        {
+            return null;
+        }
+
         var resolved = Str(pkg, "resolvedVersion");
         var latest = Str(pkg, "latestVersion");
         return latest.Length > 0
