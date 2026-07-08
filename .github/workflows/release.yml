@@ -17,6 +17,8 @@ jobs:
       - name: push
         env:
           NUGET_KEY: ${{ secrets.NUGET_KEY }}
+        # publish is optional (operator-supplied NuGet key); when absent, skip — never abort the prune steps below
+        if: ${{ env.NUGET_KEY != '' }}
         run: dotnet nuget push "out/*.nupkg" -k "$NUGET_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate
       - name: prune releases
         env:
