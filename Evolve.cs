@@ -117,7 +117,12 @@ internal static class Evolve
         var stale = new List<string>();
         foreach (var pkg in TopLevelPackages(projects))
         {
-            var entry = StaleEntry(pkg, allowed);
+            if (allowed.Contains(Str(pkg, "id")))
+            {
+                continue;
+            }
+
+            var entry = StaleEntry(pkg);
             if (entry is not null && !stale.Contains(entry, StringComparer.Ordinal))
             {
                 stale.Add(entry);
@@ -162,14 +167,9 @@ internal static class Evolve
     }
 #pragma warning restore IDISP004
 
-    private static string? StaleEntry(JsonElement pkg, ICollection<string> allowed)
+    private static string? StaleEntry(JsonElement pkg)
     {
         var id = Str(pkg, "id");
-        if (allowed.Contains(id))
-        {
-            return null;
-        }
-
         var resolved = Str(pkg, "resolvedVersion");
         var latest = Str(pkg, "latestVersion");
         return latest.Length > 0
