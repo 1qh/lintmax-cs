@@ -119,8 +119,8 @@ internal static class Linters
                 shell.Length > 0,
                 "shfmt",
                 fix
-                    ? ["-w", "-s", "-ci", "-bn", "-sr", "."]
-                    : ["-d", "-s", "-ci", "-bn", "-sr", "."]
+                    ? ["-w", "-s", "-ci", "-bn", "-sr", "-i", "2", "."]
+                    : ["-d", "-s", "-ci", "-bn", "-sr", "-i", "2", "."]
             ),
             (shell.Length > 0, "shellcheck", [.. ShellCheckFlags, .. shell]),
             (
