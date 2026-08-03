@@ -72,10 +72,19 @@ while read -r t; do
 	if [[ ${t} == "${keep}" || ${newest} != "${keep}" ]]; then
 		continue
 	fi
-	if gh api -X DELETE "repos/${this_repo}/git/refs/tags/${t}" < /dev/null 2> /dev/null; then
+	# The release loop above deletes its tag via --cleanup-tag, so a tag listed before that runs is
+	# already gone by the time this loop reaches it. An absent reference is the work already done,
+	# never a failure — counting it as one is what failed a release whose prune fully succeeded.
+	set +e
+	out=$(gh api -X DELETE "repos/${this_repo}/git/refs/tags/${t}" < /dev/null 2>&1)
+	status=$?
+	set -e
+	if [[ ${status} -eq 0 ]]; then
 		echo "deleted dangling tag ${t}"
+	elif printf '%s' "${out}" | grep -q 'Reference does not exist'; then
+		echo "tag ${t} already gone"
 	else
-		echo "prune-old-releases: could not delete tag ${t}" >&2
+		echo "prune-old-releases: could not delete tag ${t}: ${out}" >&2
 		failed=$((failed + 1))
 	fi
 	sleep 1
