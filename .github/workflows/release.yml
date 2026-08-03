@@ -28,4 +28,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KEEP_RUN_ID: ${{ github.run_id }}
-        run: bash scripts/prune-ci-runs.sh
+          REPO: ${{ github.repository }}
+        run: sh scripts/prune-ci-runs.sh
