@@ -193,6 +193,7 @@ internal static class Gate
     )
     {
         var cfg = Path.Combine(AssetsDir, "dprint.json");
+        await Dprint.BumpAsync(cfg, token).ConfigureAwait(false);
         var (code, noDeprecated) = await CSharpGateAsync(root, props, token).ConfigureAwait(false);
 
         var fileTypesOk = await Linters.CheckAsync(root, cfg, token).ConfigureAwait(false);
@@ -241,9 +242,9 @@ internal static class Gate
             _ = await Transform.StripAsync(root, token).ConfigureAwait(false);
             _ = await ShAsync(Dotnet, "restore", token).ConfigureAwait(false);
             _ = await ShAsync("csharpier", "format .", token).ConfigureAwait(false);
-            await Linters
-                .FixAsync(root, Path.Combine(AssetsDir, "dprint.json"), token)
-                .ConfigureAwait(false);
+            var dprintCfg = Path.Combine(AssetsDir, "dprint.json");
+            await Dprint.BumpAsync(dprintCfg, token).ConfigureAwait(false);
+            await Linters.FixAsync(root, dprintCfg, token).ConfigureAwait(false);
             _ = await ShAsync("git", "add -A", token).ConfigureAwait(false);
             foreach (
                 var fx in new[]
