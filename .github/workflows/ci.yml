@@ -10,6 +10,12 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL }}
     steps:
       - uses: actions/checkout@v4
+      - name: resolve the .NET root the installed tool launches against
+        run: |
+          set -eu
+          root=$(dotnet --list-runtimes | head -1 | sed 's#.*\[\(.*\)/shared/.*#\1#')
+          test -d "${root}"
+          echo "DOTNET_ROOT=${root}" >> "${GITHUB_ENV}"
       - name: pack + install lintmax-cs (outside checkout)
         run: |
           set -eu
