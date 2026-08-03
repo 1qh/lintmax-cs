@@ -96,9 +96,18 @@ internal static class Dprint
 
     private static string PluginName(string file)
     {
-        var cut = file.IndexOfAny(['-', '@']);
-        return cut < 0 ? file : file[..cut];
+        var cut = file.LastIndexOfAny(['-', '@']);
+        if (cut < 0)
+        {
+            return file;
+        }
+        var tail = file[(cut + 1)..].TrimStart('v');
+        var parts = tail.Split('.');
+        var versioned = parts.Length is 3 && Array.TrueForAll(parts, IsNumber);
+        return versioned ? file[..cut] : file;
     }
+
+    private static bool IsNumber(string part) => part.Length > 0 && !part.AsSpan().ContainsAnyExceptInRange('0', '9');
 
     private static async Task<string?> LatestUrlAsync(string path, CancellationToken token)
     {
