@@ -29,6 +29,7 @@ lintmax-cs rules     # list every active rule
 
 - Analyzer packs float at latest (`*`), refreshed on restore.
 - Self-update under CI (`dotnet tool update -g lintmax-cs`).
+- dprint plugins resolve through each plugin's `latest.json` and the concrete versioned URL is rewritten, so the shipped pins are only a bootstrap seed. TTL-cached locally, always fresh in CI. A constant floating URL is deliberately not used: dprint caches a plugin by URL, so an unchanging URL would resolve once and freeze.
 - Green-tree-hash cache: unchanged tree + version → `ok (cached)`.
 - Staleness gate: any DIRECT dependency behind its latest stable release HARD-FAILS the gate (Latest-only; parity with lintmax-go). TTL-cached locally, always fresh in CI. Bypass all with `LINTMAX_SKIP_STALENESS=1`; exempt evidenced can't-upgrade pins with `LINTMAX_STALENESS_ALLOW=Id1,Id2`.
 - Bypass with `LINTMAX_NO_CACHE=1`; skip advisory with `LINTMAX_SKIP_STALENESS=1`.
