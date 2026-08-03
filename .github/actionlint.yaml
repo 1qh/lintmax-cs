@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - self-hosted-mac-arm64
+    - self-hosted-win-x64

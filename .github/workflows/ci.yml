@@ -11,11 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: pack + install lintmax-cs (outside checkout)
-        shell: powershell
         run: |
+          set -eu
           dotnet pack -c Release -o pack
-          if (Test-Path C:\lmtool-ci) { Remove-Item C:\lmtool-ci -Recurse -Force }
-          dotnet tool install --tool-path C:\lmtool-ci lintmax-cs --add-source pack
+          tools=$(mktemp -d)
+          echo "TOOLS=${tools}" >> "${GITHUB_ENV}"
+          dotnet tool install --tool-path "${tools}" lintmax-cs --add-source pack
       - name: check (dogfood)
-        shell: powershell
-        run: C:\lmtool-ci\lintmax-cs check
+        run: |
+          set -eu
+          "${TOOLS}/lintmax-cs" check

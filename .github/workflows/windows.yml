@@ -1,0 +1,19 @@
+name: windows
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: self-hosted-win-x64
+    steps:
+      - uses: actions/checkout@v4
+      - name: pack + install lintmax-cs (outside checkout)
+        shell: powershell
+        run: |
+          dotnet pack -c Release -o pack
+          if (Test-Path C:\lmtool-ci) { Remove-Item C:\lmtool-ci -Recurse -Force }
+          dotnet tool install --tool-path C:\lmtool-ci lintmax-cs --add-source pack
+      - name: check (dogfood)
+        shell: powershell
+        run: C:\lmtool-ci\lintmax-cs check
