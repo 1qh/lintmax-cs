@@ -2,7 +2,6 @@
 // Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
 // </copyright>
 
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -47,7 +46,7 @@ internal static class Evolve
             return;
         }
 
-        _ = await ShAsync("dotnet", "tool update -g lintmax-cs", token).ConfigureAwait(false);
+        _ = await Proc.RunAsync("dotnet", ["tool", "update", "-g", "lintmax-cs"], Directory.GetCurrentDirectory(), token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -59,6 +58,7 @@ internal static class Evolve
     /// <param name="root">Target directory.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>Stale direct-dependency descriptions; empty when all current.</returns>
+    /// <exception cref="IOException">Dependency restore or scanning fails.</exception>
     internal static async Task<IReadOnlyList<string>> StalenessAsync(
         string root,
         CancellationToken token
@@ -69,7 +69,7 @@ internal static class Evolve
             return [];
         }
 
-        var manifestKey = ManifestKey(root);
+        var manifestKey = await ManifestKeyAsync(root, token).ConfigureAwait(false);
         if (!IsCi)
         {
             var cached = await ReadStaleCacheAsync(root, manifestKey, token).ConfigureAwait(false);
@@ -82,15 +82,19 @@ internal static class Evolve
         // reason: scan PER-PROJECT not `dotnet list <dir>` (dir form self-restores + reads-stale, giving 0 projects/false-stale); prerelease excluded so only latest STABLE gates.
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var stale = new List<string>();
-        foreach (var proj in ProjectFiles(root))
+        var mirror = await VersionControl.MirrorAsync(root, files: null, token).ConfigureAwait(false);
+        try
         {
-            var (_, json) = await ShAsync(
-                    "dotnet",
-                    $"list \"{proj}\" package --outdated --format json",
-                    token
-                )
-                .ConfigureAwait(false);
-            stale.AddRange(ParseStale(json).Where(seen.Add));
+            foreach (var proj in await ProjectFilesAsync(root, token).ConfigureAwait(false))
+            {
+                var target = Path.Combine(mirror, Path.GetRelativePath(root, proj));
+                var findings = await ScanProjectAsync(target, mirror, token).ConfigureAwait(false);
+                stale.AddRange(findings.Where(seen.Add));
+            }
+        }
+        finally
+        {
+            Directory.Delete(mirror, recursive: true);
         }
 
         var cacheBody = StaleCacheBody(root, manifestKey, stale);
@@ -98,9 +102,42 @@ internal static class Evolve
         return stale;
     }
 
-    private static IEnumerable<string> ProjectFiles(string root) =>
-        Directory
-            .EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+    /// <summary>Restores a project and reads its stale direct dependencies.</summary>
+    /// <param name="target">Project path in the mirror.</param>
+    /// <param name="mirror">Working directory.</param>
+    /// <param name="token">Cancellation token.</param>
+    /// <returns>Stale dependency descriptions.</returns>
+    /// <exception cref="IOException">Dependency restore or scanning fails.</exception>
+    private static async Task<IReadOnlyList<string>> ScanProjectAsync(
+        string target,
+        string mirror,
+        CancellationToken token
+    )
+    {
+        var (restoreCode, restoreOutput, restoreError) = await Proc.RunSeparatedAsync(
+            "dotnet",
+            ["restore", target],
+            mirror,
+            token
+        ).ConfigureAwait(false);
+        if (restoreCode is not 0)
+        {
+            throw new IOException($"lintmax-cs: dependency restore failed: {restoreOutput}{restoreError}");
+        }
+
+        var (code, json, error) = await Proc.RunSeparatedAsync(
+            "dotnet",
+            ["list", target, "package", "--outdated", "--format", "json"],
+            mirror,
+            token
+        ).ConfigureAwait(false);
+        return code is not 0
+            ? throw new IOException($"lintmax-cs: dependency scan failed: {json}{error}")
+            : ParseStale(json);
+    }
+
+    private static async Task<IEnumerable<string>> ProjectFilesAsync(string root, CancellationToken token) =>
+        (await VersionControl.FilesAsync(root, "*.csproj", token).ConfigureAwait(false))
             .Where(static f => !PathUtil.IsExcluded(f))
             .Order(StringComparer.Ordinal);
 
@@ -197,12 +234,11 @@ internal static class Evolve
             ? v.GetString() ?? string.Empty
             : string.Empty;
 
-    private static string ManifestKey(string root)
+    private static async Task<string> ManifestKeyAsync(string root, CancellationToken token)
     {
         var sb = new StringBuilder();
         foreach (
-            var f in Directory
-                .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            var f in (await VersionControl.FilesAsync(root, "*.*", token).ConfigureAwait(false))
                 .Where(static f =>
                     (
                         ManifestExtensions.Contains(Path.GetExtension(f))
@@ -274,40 +310,5 @@ internal static class Evolve
     {
         var value = Environment.GetEnvironmentVariable(name);
         return !string.IsNullOrEmpty(value) && !string.Equals(value, "0", StringComparison.Ordinal);
-    }
-
-    private static async Task<(int Code, string Output)> ShAsync(
-        string exe,
-        string args,
-        CancellationToken token
-    )
-    {
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        try
-        {
-            using var p = Process.Start(psi)!;
-
-            // reason: drain stderr concurrently even though only stdout is used — an undrained redirected stderr deadlocks the child once its pipe buffer fills.
-            var outTask = p.StandardOutput.ReadToEndAsync(token);
-            var errTask = p.StandardError.ReadToEndAsync(token);
-            var stdout = await outTask.ConfigureAwait(false);
-            _ = await errTask.ConfigureAwait(false);
-            await p.WaitForExitAsync(token).ConfigureAwait(false);
-            return (p.ExitCode, stdout);
-        }
-        catch (Exception e)
-            when (e
-                    is System.ComponentModel.Win32Exception
-                        or InvalidOperationException
-                        or IOException
-            )
-        {
-            return (-1, e.ToString());
-        }
     }
 }

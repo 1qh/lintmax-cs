@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../AssemblyInfo.cs" Link="AssemblyInfo.cs" />
+    <Compile Include="../VersionControl.cs" Link="VersionControl.cs" />
+    <Compile Include="../Proc.cs" Link="Proc.cs" />
+    <Compile Include="../PathUtil.cs" Link="PathUtil.cs" />
+  </ItemGroup>
+</Project>

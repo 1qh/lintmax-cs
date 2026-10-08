@@ -28,7 +28,7 @@ internal static class Transform
     internal static async Task<int> StripAsync(string root, CancellationToken token)
     {
         var changed = 0;
-        foreach (var file in CsFiles(root))
+        foreach (var file in await CsFilesAsync(root, token).ConfigureAwait(false))
         {
             var original = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
             var stripped = await StripTextAsync(original, token).ConfigureAwait(false);
@@ -52,7 +52,7 @@ internal static class Transform
     )
     {
         var offenders = new List<string>();
-        foreach (var file in CsFiles(root))
+        foreach (var file in await CsFilesAsync(root, token).ConfigureAwait(false))
         {
             var original = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
             if (
@@ -81,8 +81,7 @@ internal static class Transform
     {
         var bad = new List<string>();
         foreach (
-            var file in Directory
-                .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            var file in (await VersionControl.FilesAsync(root, "*.*", token).ConfigureAwait(false))
                 .Where(IsXml)
         )
         {
@@ -113,10 +112,9 @@ internal static class Transform
             && XmlExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal);
     }
 
-    private static IEnumerable<string> CsFiles(string root)
+    private static async Task<IEnumerable<string>> CsFilesAsync(string root, CancellationToken token)
     {
-        return Directory
-            .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        return (await VersionControl.FilesAsync(root, "*.cs", token).ConfigureAwait(false))
             .Where(static f =>
                 !PathUtil.IsExcluded(f)
                 && !f.EndsWith(".g.cs", StringComparison.Ordinal)

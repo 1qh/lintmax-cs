@@ -11,6 +11,19 @@ internal static class Gate
 {
     private const string Dotnet = "dotnet";
 
+    private static readonly string[] CSharpierExtensions =
+    [
+        ".cs",
+        ".csx",
+        ".csproj",
+        ".props",
+        ".targets",
+        ".xml",
+        ".config",
+        ".xaml",
+        ".resx",
+    ];
+
     private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, "assets");
 
     /// <summary>Runs the gate, optionally autofixing first.</summary>
@@ -138,53 +151,61 @@ internal static class Gate
         CancellationToken token
     )
     {
-        var hasProject = Directory
-            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Any(static f =>
-                (
-                    f.EndsWith(".csproj", StringComparison.Ordinal)
-                    || f.EndsWith(".sln", StringComparison.Ordinal)
-                ) && !PathUtil.IsExcluded(f)
-            );
-        if (!hasProject)
+        var projects = await ProjectFilesAsync(root, token).ConfigureAwait(false);
+        if (projects.Length is 0)
         {
             return (0, true);
         }
 
-        var (buildCode, buildOutput) = await ShAsync(
-                Dotnet,
-                $"build -c Release -p:CustomBeforeMicrosoftCommonProps=\"{props}\" -warnaserror",
-                token
-            )
-            .ConfigureAwait(false);
-        foreach (
-            var line in buildOutput
-                .Split('\n')
-                .Where(static l => l.Contains(": error ", StringComparison.Ordinal))
-        )
+        // reason: even an explicit SDK project expands Compile globs; a filtered mirror keeps ignored source out of the build.
+        var mirror = await VersionControl.MirrorAsync(root, files: null, token).ConfigureAwait(false);
+        try
         {
-            await Console.Error.WriteLineAsync(line.Trim().AsMemory(), token).ConfigureAwait(false);
-        }
+            var code = 0;
+            var noDeprecated = true;
+            foreach (var project in projects)
+            {
+                var target = Path.Combine(mirror, Path.GetRelativePath(root, project));
+                var (buildCode, buildOutput) = await Proc.RunAsync(
+                    Dotnet,
+                    ["build", target, "-c", "Release", $"-p:CustomBeforeMicrosoftCommonProps={props}", "-warnaserror"],
+                    mirror,
+                    token
+                ).ConfigureAwait(false);
+                if (buildCode is not 0)
+                {
+                    code = buildCode;
+                    await Console.Error.WriteLineAsync(
+                        buildOutput.Replace(mirror, root, StringComparison.Ordinal).Trim().AsMemory(), token
+                    ).ConfigureAwait(false);
+                }
 
-        var (_, deprecatedOut) = await ShAsync(
-                Dotnet,
-                "list package --deprecated --format json",
-                token
-            )
-            .ConfigureAwait(false);
-        var noDeprecated = !deprecatedOut.Contains(
-            "\"deprecationReasons\"",
-            StringComparison.Ordinal
-        );
-        if (!noDeprecated)
+                var (deprecatedCode, deprecatedOut) = await Proc.RunAsync(
+                    Dotnet,
+                    ["list", target, "package", "--deprecated", "--format", "json"],
+                    mirror,
+                    token
+                ).ConfigureAwait(false);
+                if (deprecatedCode is not 0 || deprecatedOut.Contains("\"deprecationReasons\"", StringComparison.Ordinal))
+                {
+                    noDeprecated = false;
+                    await Console.Error.WriteLineAsync(
+                        deprecatedOut.Replace(mirror, root, StringComparison.Ordinal).Trim().AsMemory(), token
+                    ).ConfigureAwait(false);
+                }
+            }
+
+            return (code, noDeprecated);
+        }
+        finally
         {
-            await Console
-                .Error.WriteLineAsync("deprecated NuGet package(s) present".AsMemory(), token)
-                .ConfigureAwait(false);
+            Directory.Delete(mirror, recursive: true);
         }
-
-        return (buildCode, noDeprecated);
     }
+
+    private static async Task<string[]> ProjectFilesAsync(string root, CancellationToken token) =>
+        [.. (await VersionControl.FilesAsync(root, "*.csproj", token).ConfigureAwait(false))
+            .Where(static f => !PathUtil.IsExcluded(f))];
 
     private static async Task<bool> RunLintersAsync(
         string root,
@@ -223,99 +244,125 @@ internal static class Gate
     /// <returns>A task.</returns>
     private static async Task AutofixAsync(string root, string props, CancellationToken token)
     {
-        var dbp = Path.Combine(root, "Directory.Build.props");
-        var had = File.Exists(dbp);
-        var bak = dbp + ".lintmaxbak";
-        if (had)
-        {
-            File.Move(dbp, bak, overwrite: true);
-        }
+        _ = await Transform.StripAsync(root, token).ConfigureAwait(false);
+        var dprintCfg = Path.Combine(AssetsDir, "dprint.json");
+        await Dprint.BumpAsync(dprintCfg, token).ConfigureAwait(false);
+        await Linters.FixAsync(root, dprintCfg, token).ConfigureAwait(false);
 
-        await File.WriteAllTextAsync(
-                dbp,
-                $"<Project><Import Project=\"{props}\" /></Project>",
-                token
-            )
-            .ConfigureAwait(false);
+        var files = (await VersionControl.FilesAsync(root, "*", token).ConfigureAwait(false))
+            .Where(static f => !PathUtil.IsExcluded(f)).ToArray();
+        var projects = await ProjectFilesAsync(root, token).ConfigureAwait(false);
+        var mirror = await VersionControl.MirrorAsync(root, files: null, token).ConfigureAwait(false);
         try
         {
-            _ = await Transform.StripAsync(root, token).ConfigureAwait(false);
-            _ = await ShAsync(Dotnet, "restore", token).ConfigureAwait(false);
-            _ = await ShAsync("csharpier", "format .", token).ConfigureAwait(false);
-            var dprintCfg = Path.Combine(AssetsDir, "dprint.json");
-            await Dprint.BumpAsync(dprintCfg, token).ConfigureAwait(false);
-            await Linters.FixAsync(root, dprintCfg, token).ConfigureAwait(false);
-            _ = await ShAsync("git", "add -A", token).ConfigureAwait(false);
-            foreach (
-                var fx in new[]
-                {
-                    "format style --severity info",
-                    "format analyzers --severity info",
-                }
-            )
+            var sources = MirrorPaths(root, mirror, files.Where(IsSource));
+            var formatted = MirrorPaths(root, mirror, files.Where(IsCSharpierFile));
+            if (formatted.Length > 0)
             {
-                _ = await ShAsync(Dotnet, fx, token).ConfigureAwait(false);
-                if (
-                    (await ShAsync(Dotnet, "build -c Release", token).ConfigureAwait(false)).Code
-                    is 0
-                )
-                {
-                    _ = await ShAsync("git", "add -A", token).ConfigureAwait(false);
-                }
-                else
-                {
-                    _ = await ShAsync("git", "checkout -- .", token).ConfigureAwait(false);
-                    await Console
-                        .Error.WriteLineAsync(
-                            $"lintmax-cs: '{fx}' broke the build; skipped.".AsMemory(),
-                            token
-                        )
-                        .ConfigureAwait(false);
-                }
+                _ = await Proc.RunAsync("csharpier", ["format", .. formatted], mirror, token).ConfigureAwait(false);
+            }
+
+            var dbp = AddPropsImport(mirror, props);
+            foreach (var project in projects)
+            {
+                var target = Path.Combine(mirror, Path.GetRelativePath(root, project));
+                await FixProjectAsync(target, mirror, sources, token).ConfigureAwait(false);
+            }
+
+            foreach (var source in formatted.Where(f => !string.Equals(f, dbp, StringComparison.Ordinal)))
+            {
+                var target = Path.Combine(root, Path.GetRelativePath(mirror, source));
+                File.Copy(source, target, overwrite: true);
             }
         }
         finally
         {
-            File.Delete(dbp);
-            if (had)
-            {
-                File.Move(bak, dbp, overwrite: true);
-            }
+            Directory.Delete(mirror, recursive: true);
         }
     }
 
-    private static async Task<(int Code, string Output)> ShAsync(
-        string exe,
-        string args,
+    private static bool IsSource(string file) =>
+        string.Equals(Path.GetExtension(file), ".cs", StringComparison.Ordinal)
+        || string.Equals(Path.GetExtension(file), ".csx", StringComparison.Ordinal);
+
+    private static bool IsCSharpierFile(string file) =>
+        CSharpierExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal);
+
+    private static string[] MirrorPaths(string root, string mirror, IEnumerable<string> files) =>
+        [.. files.Select(f => Path.Combine(mirror, Path.GetRelativePath(root, f)))];
+
+    private static string AddPropsImport(string mirror, string props)
+    {
+        var dbp = Path.Combine(mirror, "Directory.Build.props");
+        var document = File.Exists(dbp)
+            ? System.Xml.Linq.XDocument.Load(dbp)
+            : new System.Xml.Linq.XDocument(new System.Xml.Linq.XElement("Project"));
+        document.Root!.Add(new System.Xml.Linq.XElement(
+            document.Root.Name.Namespace + "Import",
+            new System.Xml.Linq.XAttribute("Project", props)
+        ));
+        document.Save(dbp);
+        return dbp;
+    }
+
+    private static async Task FixProjectAsync(
+        string target,
+        string mirror,
+        string[] sources,
         CancellationToken token
     )
     {
-        var psi = new ProcessStartInfo(Proc.ResolveExe(exe), args)
+        _ = await Proc.RunAsync(Dotnet, ["restore", target], mirror, token).ConfigureAwait(false);
+        foreach (var fixer in new[] { "style", "analyzers" })
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        try
-        {
-            using var p = Process.Start(psi)!;
+            await ApplyVerifiedFixAsync(target, mirror, sources, fixer, token).ConfigureAwait(false);
+        }
+    }
 
-            // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
-            var outTask = p.StandardOutput.ReadToEndAsync(token);
-            var errTask = p.StandardError.ReadToEndAsync(token);
-            var stdout = await outTask.ConfigureAwait(false);
-            var stderr = await errTask.ConfigureAwait(false);
-            await p.WaitForExitAsync(token).ConfigureAwait(false);
-            return (p.ExitCode, stdout + stderr);
-        }
-        catch (Exception e)
-            when (e
-                    is System.ComponentModel.Win32Exception
-                        or InvalidOperationException
-                        or IOException
-            )
+    private static async Task ApplyVerifiedFixAsync(
+        string target,
+        string mirror,
+        string[] sources,
+        string fixer,
+        CancellationToken token
+    )
+    {
+        var backup = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var source in sources)
         {
-            return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
+            backup.Add(source, await File.ReadAllBytesAsync(source, token).ConfigureAwait(false));
         }
+
+        if (sources.Length is 0)
+        {
+            return;
+        }
+
+        _ = await Proc.RunAsync(
+            Dotnet,
+            ["format", fixer, target, "--severity", "info", "--include", .. sources],
+            mirror,
+            token
+        ).ConfigureAwait(false);
+        var (code, _) = await Proc.RunAsync(
+            Dotnet,
+            ["build", target, "-c", "Release"],
+            mirror,
+            token
+        ).ConfigureAwait(false);
+        if (code is 0)
+        {
+            return;
+        }
+
+        foreach (var (source, bytes) in backup)
+        {
+            await File.WriteAllBytesAsync(source, bytes, token).ConfigureAwait(false);
+        }
+
+        await Console.Error.WriteLineAsync(
+            $"lintmax-cs: 'format {fixer}' broke the build; skipped.".AsMemory(),
+            token
+        ).ConfigureAwait(false);
     }
 }

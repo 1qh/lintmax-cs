@@ -29,3 +29,5 @@ jobs:
           "${TOOLS}/lintmax-cs" check
       - name: smoke (command contract + formatter scope)
         run: bash scripts/smoke.sh "${TOOLS}/lintmax-cs"
+      - name: version-control candidate tests
+        run: dotnet run --project tests/VersionControl.Tests.csproj

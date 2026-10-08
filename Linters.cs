@@ -2,7 +2,6 @@
 // Copyright (c) lintmax-cs contributors. Licensed under the MIT License.
 // </copyright>
 
-using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -18,7 +17,6 @@ internal static class Linters
     [
         "--enable=all",
         "--severity=style",
-        "--external-sources",
     ];
     private static readonly string[] HadolintFlags =
     [
@@ -39,6 +37,29 @@ internal static class Linters
         ".html",
         ".graphql",
     ];
+    private static readonly string[] DprintExtensions =
+    [
+        ".json",
+        ".jsonc",
+        ".toml",
+        ".md",
+        ".markdown",
+        ".yml",
+        ".yaml",
+        ".css",
+        ".scss",
+        ".sass",
+        ".less",
+        ".html",
+        ".htm",
+        ".vue",
+        ".svelte",
+        ".astro",
+        ".graphql",
+        ".gql",
+        ".sql",
+    ];
+
     private static string AssetsDir => Path.Combine(AppContext.BaseDirectory, AssetsFolder);
 
     private static string GitleaksConfig =>
@@ -56,26 +77,35 @@ internal static class Linters
     /// <returns>True when every applicable linter passes.</returns>
     internal static async Task<bool> CheckAsync(string root, string dprintConfig, CancellationToken token)
     {
-        var tasks = new List<Task<(int Code, string Output)>>();
-        foreach (var (exe, args) in Applicable(root, dprintConfig, fix: false))
+        var files = await FilesAsync(root, token).ConfigureAwait(false);
+        var mirror = await VersionControl.MirrorAsync(root, files, token).ConfigureAwait(false);
+        try
         {
-            tasks.Add(ShAsync(exe, args, root, token));
-        }
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-        var ok = true;
-        foreach (var (code, output) in results)
-        {
-            if (code is not 0)
+            var tasks = new List<Task<(int Code, string Output)>>();
+            foreach (var (exe, args) in Applicable(mirror, dprintConfig, fix: false))
             {
-                ok = false;
-                await Console
-                    .Error.WriteLineAsync(output.Trim().AsMemory(), token)
-                    .ConfigureAwait(false);
+                tasks.Add(Proc.RunAsync(exe, args, mirror, token));
             }
-        }
 
-        return ok;
+            var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+            var ok = true;
+            foreach (var (code, output) in results)
+            {
+                if (code is not 0)
+                {
+                    ok = false;
+                    await Console.Error.WriteLineAsync(
+                        output.Replace(mirror, root, StringComparison.Ordinal).Trim().AsMemory(), token
+                    ).ConfigureAwait(false);
+                }
+            }
+
+            return ok;
+        }
+        finally
+        {
+            Directory.Delete(mirror, recursive: true);
+        }
     }
 
     /// <summary>Runs the write-mode formatters for every applicable file type.</summary>
@@ -85,9 +115,27 @@ internal static class Linters
     /// <returns>A task.</returns>
     internal static async Task FixAsync(string root, string dprintConfig, CancellationToken token)
     {
-        foreach (var (exe, args) in Applicable(root, dprintConfig, fix: true))
+        var files = (await FilesAsync(root, token).ConfigureAwait(false)).ToArray();
+        var mirror = await VersionControl.MirrorAsync(root, files, token).ConfigureAwait(false);
+        try
         {
-            _ = await ShAsync(exe, args, root, token).ConfigureAwait(false);
+            foreach (var (exe, args) in Applicable(mirror, dprintConfig, fix: true))
+            {
+                _ = await Proc.RunAsync(exe, args, mirror, token).ConfigureAwait(false);
+            }
+
+            foreach (var file in files)
+            {
+                var source = Path.Combine(mirror, Path.GetRelativePath(root, file));
+                if (File.Exists(source))
+                {
+                    File.Copy(source, file, overwrite: true);
+                }
+            }
+        }
+        finally
+        {
+            Directory.Delete(mirror, recursive: true);
         }
     }
 
@@ -97,53 +145,76 @@ internal static class Linters
         bool fix
     )
     {
-        var ignore = IgnoreGlobs(root);
-        yield return ("editorconfig-checker", EditorconfigArgs(ignore));
-        yield return ("gitleaks", GitleaksArgs());
-        yield return ("typos", TyposArgs(ignore, fix));
-        yield return ("dprint", DprintArgs(root, dprintConfig, ignore, fix));
-        var shell = ShellFiles(root);
-        var xaml = XamlFiles(root);
-        var web = WebFileList(root);
-        var conditional = new (bool Active, string Exe, string[] Args)[]
+        var ignored = Ignored(root);
+        var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(f => !ignored(f)).ToArray();
+        if (files.Length is 0)
         {
+            yield break;
+        }
+
+        // reason: gitleaks walks directories; root is a mirror containing only eligible files.
+        yield return ("gitleaks", ["dir", "--max-archive-depth", "100", ConfigFlag, GitleaksConfig, root]);
+        yield return ("editorconfig-checker", files);
+        yield return ("typos", fix ? ["--write-changes", .. files] : files);
+        var formatted = files.Where(IsDprintFile).ToArray();
+        if (formatted.Length > 0)
+        {
+            yield return (
+                "dprint",
+                [fix ? "fmt" : "check", "--allow-no-files", ConfigFlag, dprintConfig, .. formatted]
+            );
+        }
+
+        foreach (var tool in FileTypeTools(root, files, fix))
+        {
+            yield return tool;
+        }
+    }
+
+    /// <summary>Passes the repository's actionlint config explicitly, since a mirror without .git cannot locate it.</summary>
+    /// <param name="root">Directory the workflows are listed from.</param>
+    /// <param name="workflows">Workflow files to check.</param>
+    /// <returns>The actionlint arguments.</returns>
+    private static string[] ActionlintArgs(string root, string[] workflows)
+    {
+        var config = Path.Combine(root, ".github", "actionlint.yaml");
+        return File.Exists(config) ? ["-config-file", config, .. workflows] : workflows;
+    }
+
+    private static IEnumerable<(string Exe, string[] Args)> FileTypeTools(
+        string root,
+        string[] files,
+        bool fix
+    )
+    {
+        var web = files
+            .Where(static f => WebExt.Contains(Path.GetExtension(f), StringComparer.Ordinal))
+            .ToArray();
+        var markdown = WithExtension(files, ".md");
+        var yaml = files
+            .Where(static f => string.Equals(Path.GetExtension(f), ".yml", StringComparison.Ordinal)
+                || string.Equals(Path.GetExtension(f), ".yaml", StringComparison.Ordinal)
+            )
+            .ToArray();
+        var workflows = WorkflowFiles(root, yaml);
+        var toml = WithExtension(files, ".toml");
+        var docker = files
+            .Where(static f => Path.GetFileName(f).StartsWith("Dockerfile", StringComparison.Ordinal))
+            .ToArray();
+        var conditional = ScriptTools(files, fix).Concat(new (bool Active, string Exe, string[] Args)[]
+        {
+            (workflows.Length > 0, "actionlint", ActionlintArgs(root, workflows)),
             (
-                shell.Length > 0,
-                "shfmt",
-                fix
-                    ? ["-w", "-s", "-ci", "-bn", "-sr", "-i", "2", "."]
-                    : ["-d", "-s", "-ci", "-bn", "-sr", "-i", "2", "."]
-            ),
-            (shell.Length > 0, "shellcheck", [.. ShellCheckFlags, .. shell]),
-            (
-                HasFiles(root, "*.ps1"),
-                "pwsh",
-                [
-                    "-NoProfile",
-                    "-Command",
-                    "Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit -Severity Error,Warning,Information",
-                ]
-            ),
-            (
-                xaml.Length > 0,
-                "xstyler",
-                fix ? ["-f", .. xaml] : ["-f", .. xaml, "--passive"]
-            ),
-            (Directory.Exists(Path.Combine(root, ".github", "workflows")), "actionlint", []),
-            (
-                HasFiles(root, "*.md"),
+                markdown.Length > 0,
                 "markdownlint-cli2",
                 fix
-                    ? [ConfigFlag, MarkdownConfig, "--fix", "**/*.md", .. NegationGlobs(ignore)]
-                    : [ConfigFlag, MarkdownConfig, "**/*.md", .. NegationGlobs(ignore)]
+                    ? [ConfigFlag, MarkdownConfig, "--fix", .. markdown]
+                    : [ConfigFlag, MarkdownConfig, .. markdown]
             ),
-            (
-                HasFiles(root, "*.yml") || HasFiles(root, "*.yaml"),
-                "yamllint",
-                ["-c", YamlConfig, "--strict", .. YamlFiles(root)]
-            ),
-            (HasFiles(root, "*.toml"), "taplo", ["lint"]),
-            (DockerFiles(root).Length > 0, "hadolint", [.. HadolintFlags, .. DockerFiles(root)]),
+            (yaml.Length > 0, "yamllint", ["-c", YamlConfig, "--strict", .. yaml]),
+            (toml.Length > 0, "taplo", ["lint", .. toml]),
+            (docker.Length > 0, "hadolint", [.. HadolintFlags, .. docker]),
             (
                 web.Length > 0,
                 "biome",
@@ -151,128 +222,63 @@ internal static class Linters
                     ? ["check", "--write", "--config-path", AssetsDir, .. web]
                     : ["check", "--config-path", AssetsDir, .. web]
             ),
-        };
+        });
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
             yield return (exe, args);
         }
     }
 
-    private static string[] WebFileList(string root) =>
-        [
-            .. Files(root)
-                .Where(static f => WebExt.Contains(Path.GetExtension(f), StringComparer.Ordinal)),
-        ];
-
-    private static string[] DockerFiles(string root)
+    private static (bool Active, string Exe, string[] Args)[] ScriptTools(string[] files, bool fix)
     {
+        var shell = WithExtension(files, ".sh");
+        var xaml = WithExtension(files, ".xaml");
+        var powershell = WithExtension(files, ".ps1");
         return
         [
-            .. Files(root)
-                .Where(static f =>
-                    Path.GetFileName(f).StartsWith("Dockerfile", StringComparison.Ordinal)
-                ),
+            (
+                shell.Length > 0,
+                "shfmt",
+                [fix ? "-w" : "-d", "-s", "-ci", "-bn", "-sr", "-i", "2", .. shell]
+            ),
+            (shell.Length > 0, "shellcheck", [.. ShellCheckFlags, .. shell]),
+            (powershell.Length > 0, "pwsh", PowerShellArgs(powershell)),
+            (xaml.Length > 0, "xstyler", fix ? ["-f", .. xaml] : ["-f", .. xaml, "--passive"]),
         ];
     }
 
-    private static IEnumerable<string> Files(string root)
-    {
-        var ignored = Ignored(root);
-        return Directory
-            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(f => !ignored(f));
-    }
+    private static string[] WorkflowFiles(string root, IEnumerable<string> yaml) =>
+        [.. yaml.Where(f => Path.GetRelativePath(root, f)
+            .Replace('\\', '/')
+            .StartsWith(".github/workflows/", StringComparison.Ordinal)
+        )];
 
-    private static string[] ShellFiles(string root)
-    {
-        var ignored = Ignored(root);
-        return
+    private static string[] PowerShellArgs(string[] powershell) =>
         [
-            .. Directory
-                .EnumerateFiles(root, "*.sh", SearchOption.AllDirectories)
-                .Where(f => !ignored(f)),
+            "-NoProfile",
+            "-Command",
+            "$findings = @("
+                + string.Join("; ", powershell.Select(static f =>
+                    "Invoke-ScriptAnalyzer -Path '"
+                    + f.Replace("'", "''", StringComparison.Ordinal)
+                    + "' -Severity Error,Warning,Information"
+                ))
+                + "); $findings; if ($findings.Count -gt 0) { exit 1 }",
         ];
-    }
 
-    private static string[] YamlFiles(string root)
+    private static string[] WithExtension(IEnumerable<string> files, string extension) =>
+        [.. files.Where(f => string.Equals(Path.GetExtension(f), extension, StringComparison.Ordinal))];
+
+    private static bool IsDprintFile(string file) =>
+        DprintExtensions.Contains(Path.GetExtension(file), StringComparer.Ordinal)
+        || Path.GetFileName(file).StartsWith("Dockerfile", StringComparison.Ordinal);
+
+    private static async Task<IEnumerable<string>> FilesAsync(string root, CancellationToken token)
     {
         var ignored = Ignored(root);
-        return
-        [
-            .. Directory
-                .EnumerateFiles(root, "*.yml", SearchOption.AllDirectories)
-                .Concat(Directory.EnumerateFiles(root, "*.yaml", SearchOption.AllDirectories))
-                .Where(f => !ignored(f)),
-        ];
+        var files = await VersionControl.FilesAsync(root, "*", token).ConfigureAwait(false);
+        return files.Where(f => !ignored(f));
     }
-
-    private static string[] GitleaksArgs() =>
-        ["dir", "--max-archive-depth", "100", ConfigFlag, GitleaksConfig, "."];
-
-    private static string[] XamlFiles(string root)
-    {
-        var ignored = Ignored(root);
-        return
-        [
-            .. Directory
-                .EnumerateFiles(root, "*.xaml", SearchOption.AllDirectories)
-                .Where(f => !ignored(f)),
-        ];
-    }
-
-    private static string[] DprintArgs(
-        string root,
-        string dprintConfig,
-        IReadOnlyCollection<string> ignore,
-        bool fix
-    )
-    {
-        var args = new List<string>
-        {
-            fix ? "fmt" : "check",
-            "--allow-no-files",
-            ConfigFlag,
-            dprintConfig,
-        };
-
-        // reason: dprint --excludes is variadic — repeating the flag errors "cannot be used multiple times"; pass it once with all globs.
-        if (ignore.Count > 0)
-        {
-            args.Add("--excludes");
-            args.AddRange(ignore.Select(glob => Path.Combine(root, glob)));
-        }
-
-        // reason: dprint resolves the config's includes against the config's own directory, so the project root must be named.
-        args.Add(root);
-        return [.. args];
-    }
-
-    private static string[] TyposArgs(IEnumerable<string> ignore, bool fix)
-    {
-        var args = new List<string> { "." };
-        if (fix)
-        {
-            args.Add("--write-changes");
-        }
-
-        foreach (var glob in ignore)
-        {
-            args.Add("--exclude");
-            args.Add(glob);
-        }
-
-        return [.. args];
-    }
-
-    private static string[] EditorconfigArgs(IReadOnlyCollection<string> ignore)
-    {
-        return ignore.Count is 0
-            ? ["."]
-            : ["-exclude", string.Join('|', ignore.Select(GlobToRegex)), "."];
-    }
-
-    private static string[] NegationGlobs(IEnumerable<string> ignore) =>
-        [.. ignore.Select(static g => "!" + g)];
 
     /// <summary>Builds a predicate skipping generated/VCS paths plus the consumer's .lintmaxignore globs.</summary>
     /// <param name="root">Target directory.</param>
@@ -364,55 +370,5 @@ internal static class Linters
                     .Select(static l => l.Trim())
                     .Where(static l => l.Length > 0 && !l.StartsWith('#')),
             ];
-    }
-
-    private static bool HasFiles(string root, string pattern)
-    {
-        var ignored = Ignored(root);
-        return Directory
-            .EnumerateFiles(root, pattern, SearchOption.AllDirectories)
-            .Any(f => !ignored(f));
-    }
-
-    private static async Task<(int Code, string Output)> ShAsync(
-        string exe,
-        string[] args,
-        string cwd,
-        CancellationToken token
-    )
-    {
-        var psi = new ProcessStartInfo(Proc.ResolveExe(exe))
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = cwd,
-        };
-        foreach (var arg in args)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        try
-        {
-            using var p = Process.Start(psi)!;
-
-            // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
-            var outTask = p.StandardOutput.ReadToEndAsync(token);
-            var errTask = p.StandardError.ReadToEndAsync(token);
-            var stdout = await outTask.ConfigureAwait(false);
-            var stderr = await errTask.ConfigureAwait(false);
-            await p.WaitForExitAsync(token).ConfigureAwait(false);
-            return (p.ExitCode, stdout + stderr);
-        }
-        catch (Exception e)
-            when (e
-                    is System.ComponentModel.Win32Exception
-                        or InvalidOperationException
-                        or IOException
-            )
-        {
-            return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
-        }
     }
 }

@@ -52,7 +52,11 @@ lintmax-cs rules     # list every active rule
 
 ## Configless by default
 
-Analyzers + config are injected into the target build via `-p:CustomBeforeMicrosoftCommonProps`; the consumer's csproj and editorconfig stay untouched. No file is written outside `fix`.
+Analyzers + config are injected into the target build via `-p:CustomBeforeMicrosoftCommonProps`; the consumer's csproj and editorconfig stay untouched by the injection. Consumer files are changed only by `fix`. Tools run against temporary copies of eligible files, which are removed afterwards.
+
+Inside a Git checkout, filesystem candidates are filtered through `git -C <root> ls-files -z --cached --others --exclude-standard`: tracked files and untracked files that Git does not ignore. Outside a checkout, every file is eligible before the existing generated-path and file-type exclusions. Git failures inside a checkout fail the gate instead of silently scanning ignored files.
+
+The dependency-free candidate-selection regression tests are in `tests/VersionControl.Tests.csproj`; run them with `dotnet run --project tests/VersionControl.Tests.csproj`. The enumeration audit and verification limits are recorded in [AUDIT.md](AUDIT.md).
 
 ## Earned disables
 

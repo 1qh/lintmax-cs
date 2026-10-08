@@ -243,6 +243,8 @@ dotnet_diagnostic.S881.severity = error
 dotnet_diagnostic.IDE0055.severity = none
 dotnet_diagnostic.IDE0130.severity = none
 dotnet_diagnostic.MA0038.severity = none
+# reason: MA0214 is MA0215's opposite and the vendor says to enable only 1 (docs/Rules/MA0214.md); MA0215 and AsyncFixer01 agree on returning the task
+dotnet_diagnostic.MA0214.severity = none
 dotnet_diagnostic.RCS1002.severity = none
 dotnet_diagnostic.RCS1008.severity = none
 dotnet_diagnostic.RCS1009.severity = none

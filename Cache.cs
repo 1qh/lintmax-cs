@@ -38,8 +38,7 @@ internal static class Cache
         CancellationToken token
     )
     {
-        var files = Directory
-            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+        var files = (await VersionControl.FilesAsync(root, "*.*", token).ConfigureAwait(false))
             .Where(IsTracked)
             .Order(StringComparer.Ordinal);
         var sb = new StringBuilder(configHash);
