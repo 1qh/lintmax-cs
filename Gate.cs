@@ -61,7 +61,7 @@ internal static class Gate
 
         if (passed)
         {
-            await Cache.StoreGreenAsync(root, treeHash, token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Cache.GreenPath(root), treeHash, token).ConfigureAwait(false);
             if (!await StalenessGateAsync(root, token).ConfigureAwait(false))
             {
                 return 1;
@@ -160,7 +160,7 @@ internal static class Gate
         foreach (
             var line in buildOutput
                 .Split('\n')
-                .Where(l => l.Contains(": error ", StringComparison.Ordinal))
+                .Where(static l => l.Contains(": error ", StringComparison.Ordinal))
         )
         {
             await Console.Error.WriteLineAsync(line.Trim().AsMemory(), token).ConfigureAwait(false);
@@ -284,44 +284,38 @@ internal static class Gate
         }
     }
 
-    private static Task<(int Code, string Output)> ShAsync(
+    private static async Task<(int Code, string Output)> ShAsync(
         string exe,
         string args,
         CancellationToken token
     )
     {
-        ArgumentNullException.ThrowIfNull(exe);
-        return CoreAsync();
-
-        async Task<(int Code, string Output)> CoreAsync()
+        var psi = new ProcessStartInfo(Proc.ResolveExe(exe), args)
         {
-            var psi = new ProcessStartInfo(Proc.ResolveExe(exe), args)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            try
-            {
-                using var p = Process.Start(psi)!;
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        try
+        {
+            using var p = Process.Start(psi)!;
 
-                // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
-                var outTask = p.StandardOutput.ReadToEndAsync(token);
-                var errTask = p.StandardError.ReadToEndAsync(token);
-                var stdout = await outTask.ConfigureAwait(false);
-                var stderr = await errTask.ConfigureAwait(false);
-                await p.WaitForExitAsync(token).ConfigureAwait(false);
-                return (p.ExitCode, stdout + stderr);
-            }
-            catch (Exception e)
-                when (e
-                        is System.ComponentModel.Win32Exception
-                            or InvalidOperationException
-                            or IOException
-                )
-            {
-                return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
-            }
+            // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
+            var outTask = p.StandardOutput.ReadToEndAsync(token);
+            var errTask = p.StandardError.ReadToEndAsync(token);
+            var stdout = await outTask.ConfigureAwait(false);
+            var stderr = await errTask.ConfigureAwait(false);
+            await p.WaitForExitAsync(token).ConfigureAwait(false);
+            return (p.ExitCode, stdout + stderr);
+        }
+        catch (Exception e)
+            when (e
+                    is System.ComponentModel.Win32Exception
+                        or InvalidOperationException
+                        or IOException
+            )
+        {
+            return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
         }
     }
 }

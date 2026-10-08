@@ -27,3 +27,5 @@ jobs:
         run: |
           set -eu
           "${TOOLS}/lintmax-cs" check
+      - name: smoke (command contract + formatter scope)
+        run: bash scripts/smoke.sh "${TOOLS}/lintmax-cs"

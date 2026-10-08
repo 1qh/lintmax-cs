@@ -54,30 +54,28 @@ internal static class Linters
     /// <param name="dprintConfig">Path to the bundled dprint config.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>True when every applicable linter passes.</returns>
-    internal static Task<bool> CheckAsync(string root, string dprintConfig, CancellationToken token)
+    internal static async Task<bool> CheckAsync(string root, string dprintConfig, CancellationToken token)
     {
-        ArgumentNullException.ThrowIfNull(root);
-        return CoreAsync();
-
-        async Task<bool> CoreAsync()
+        var tasks = new List<Task<(int Code, string Output)>>();
+        foreach (var (exe, args) in Applicable(root, dprintConfig, fix: false))
         {
-            var tasks = Applicable(root, dprintConfig, fix: false)
-                .Select(job => ShAsync(job.Exe, job.Args, root, token));
-            var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-            var ok = true;
-            foreach (var (code, output) in results)
-            {
-                if (code is not 0)
-                {
-                    ok = false;
-                    await Console
-                        .Error.WriteLineAsync(output.Trim().AsMemory(), token)
-                        .ConfigureAwait(false);
-                }
-            }
-
-            return ok;
+            tasks.Add(ShAsync(exe, args, root, token));
         }
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var ok = true;
+        foreach (var (code, output) in results)
+        {
+            if (code is not 0)
+            {
+                ok = false;
+                await Console
+                    .Error.WriteLineAsync(output.Trim().AsMemory(), token)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return ok;
     }
 
     /// <summary>Runs the write-mode formatters for every applicable file type.</summary>
@@ -85,17 +83,11 @@ internal static class Linters
     /// <param name="dprintConfig">Path to the bundled dprint config.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>A task.</returns>
-    internal static Task FixAsync(string root, string dprintConfig, CancellationToken token)
+    internal static async Task FixAsync(string root, string dprintConfig, CancellationToken token)
     {
-        ArgumentNullException.ThrowIfNull(root);
-        return CoreAsync();
-
-        async Task CoreAsync()
+        foreach (var (exe, args) in Applicable(root, dprintConfig, fix: true))
         {
-            foreach (var (exe, args) in Applicable(root, dprintConfig, fix: true))
-            {
-                _ = await ShAsync(exe, args, root, token).ConfigureAwait(false);
-            }
+            _ = await ShAsync(exe, args, root, token).ConfigureAwait(false);
         }
     }
 
@@ -109,7 +101,7 @@ internal static class Linters
         yield return ("editorconfig-checker", EditorconfigArgs(ignore));
         yield return ("gitleaks", GitleaksArgs());
         yield return ("typos", TyposArgs(ignore, fix));
-        yield return ("dprint", DprintArgs(dprintConfig, ignore, fix));
+        yield return ("dprint", DprintArgs(root, dprintConfig, ignore, fix));
         var shell = ShellFiles(root);
         var xaml = XamlFiles(root);
         var web = WebFileList(root);
@@ -229,6 +221,7 @@ internal static class Linters
     }
 
     private static string[] DprintArgs(
+        string root,
         string dprintConfig,
         IReadOnlyCollection<string> ignore,
         bool fix
@@ -246,9 +239,11 @@ internal static class Linters
         if (ignore.Count > 0)
         {
             args.Add("--excludes");
-            args.AddRange(ignore);
+            args.AddRange(ignore.Select(glob => Path.Combine(root, glob)));
         }
 
+        // reason: dprint resolves the config's includes against the config's own directory, so the project root must be named.
+        args.Add(root);
         return [.. args];
     }
 
@@ -379,52 +374,45 @@ internal static class Linters
             .Any(f => !ignored(f));
     }
 
-    private static Task<(int Code, string Output)> ShAsync(
+    private static async Task<(int Code, string Output)> ShAsync(
         string exe,
         string[] args,
         string cwd,
         CancellationToken token
     )
     {
-        ArgumentNullException.ThrowIfNull(exe);
-        ArgumentNullException.ThrowIfNull(args);
-        return CoreAsync();
-
-        async Task<(int Code, string Output)> CoreAsync()
+        var psi = new ProcessStartInfo(Proc.ResolveExe(exe))
         {
-            var psi = new ProcessStartInfo(Proc.ResolveExe(exe))
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                WorkingDirectory = cwd,
-            };
-            foreach (var arg in args)
-            {
-                psi.ArgumentList.Add(arg);
-            }
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            WorkingDirectory = cwd,
+        };
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
 
-            try
-            {
-                using var p = Process.Start(psi)!;
+        try
+        {
+            using var p = Process.Start(psi)!;
 
-                // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
-                var outTask = p.StandardOutput.ReadToEndAsync(token);
-                var errTask = p.StandardError.ReadToEndAsync(token);
-                var stdout = await outTask.ConfigureAwait(false);
-                var stderr = await errTask.ConfigureAwait(false);
-                await p.WaitForExitAsync(token).ConfigureAwait(false);
-                return (p.ExitCode, stdout + stderr);
-            }
-            catch (Exception e)
-                when (e
-                        is System.ComponentModel.Win32Exception
-                            or InvalidOperationException
-                            or IOException
-                )
-            {
-                return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
-            }
+            // reason: drain stdout+stderr concurrently — a sequential ReadToEnd deadlocks when the child fills the second pipe's buffer before the first stream closes.
+            var outTask = p.StandardOutput.ReadToEndAsync(token);
+            var errTask = p.StandardError.ReadToEndAsync(token);
+            var stdout = await outTask.ConfigureAwait(false);
+            var stderr = await errTask.ConfigureAwait(false);
+            await p.WaitForExitAsync(token).ConfigureAwait(false);
+            return (p.ExitCode, stdout + stderr);
+        }
+        catch (Exception e)
+            when (e
+                    is System.ComponentModel.Win32Exception
+                        or InvalidOperationException
+                        or IOException
+            )
+        {
+            return (-1, $"lintmax-cs: required tool '{exe}' not found or failed: {e.Message}");
         }
     }
 }

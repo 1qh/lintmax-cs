@@ -74,42 +74,36 @@ internal static class Transform
     /// <param name="root">Target directory.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>The malformed XML file paths.</returns>
-    internal static Task<IReadOnlyList<string>> MalformedXmlAsync(
+    internal static async Task<IReadOnlyList<string>> MalformedXmlAsync(
         string root,
         CancellationToken token
     )
     {
-        ArgumentNullException.ThrowIfNull(root);
-        return CoreAsync();
-
-        async Task<IReadOnlyList<string>> CoreAsync()
+        var bad = new List<string>();
+        foreach (
+            var file in Directory
+                .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+                .Where(IsXml)
+        )
         {
-            var bad = new List<string>();
-            foreach (
-                var file in Directory
-                    .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-                    .Where(IsXml)
-            )
+            try
             {
-                try
+                var text = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
+                var settings = new System.Xml.XmlReaderSettings { Async = true };
+                using var sr = new StringReader(text);
+                using var reader = System.Xml.XmlReader.Create(sr, settings);
+                while (await reader.ReadAsync().ConfigureAwait(false))
                 {
-                    var text = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
-                    var settings = new System.Xml.XmlReaderSettings { Async = true };
-                    using var sr = new StringReader(text);
-                    using var reader = System.Xml.XmlReader.Create(sr, settings);
-                    while (await reader.ReadAsync().ConfigureAwait(false))
-                    {
-                        token.ThrowIfCancellationRequested();
-                    }
-                }
-                catch (System.Xml.XmlException)
-                {
-                    bad.Add(file);
+                    token.ThrowIfCancellationRequested();
                 }
             }
-
-            return bad;
+            catch (System.Xml.XmlException)
+            {
+                bad.Add(file);
+            }
         }
+
+        return bad;
     }
 
     private static bool IsXml(string file)
@@ -130,43 +124,37 @@ internal static class Transform
             );
     }
 
-    private static Task<string> StripTextAsync(string text, CancellationToken token)
+    private static async Task<string> StripTextAsync(string text, CancellationToken token)
     {
-        ArgumentNullException.ThrowIfNull(text);
-        return CoreAsync();
-
-        async Task<string> CoreAsync()
+        var tree = CSharpSyntaxTree.ParseText(text, cancellationToken: token);
+        var root = await tree.GetRootAsync(token).ConfigureAwait(false);
+        var kill = new List<TextSpan>();
+        foreach (var trivia in root.DescendantTrivia())
         {
-            var tree = CSharpSyntaxTree.ParseText(text, cancellationToken: token);
-            var root = await tree.GetRootAsync(token).ConfigureAwait(false);
-            var kill = new List<TextSpan>();
-            foreach (var trivia in root.DescendantTrivia())
+            var kind = trivia.Kind();
+            var strippable =
+                kind is SyntaxKind.SingleLineCommentTrivia or SyntaxKind.MultiLineCommentTrivia;
+            if (strippable && !IsSurvivor(in trivia))
             {
-                var kind = trivia.Kind();
-                var strippable =
-                    kind is SyntaxKind.SingleLineCommentTrivia or SyntaxKind.MultiLineCommentTrivia;
-                if (strippable && !IsSurvivor(in trivia))
-                {
-                    kill.Add(trivia.FullSpan);
-                }
+                kill.Add(trivia.FullSpan);
             }
-
-            if (kill.Count is 0)
-            {
-                return text;
-            }
-
-            var sb = new System.Text.StringBuilder(text.Length);
-            var pos = 0;
-            foreach (var span in kill.OrderBy(static s => s.Start))
-            {
-                sb.Append(text, pos, span.Start - pos);
-                pos = span.End;
-            }
-
-            sb.Append(text, pos, text.Length - pos);
-            return sb.ToString();
         }
+
+        if (kill.Count is 0)
+        {
+            return text;
+        }
+
+        var sb = new System.Text.StringBuilder(text.Length);
+        var pos = 0;
+        foreach (var span in kill.OrderBy(static s => s.Start))
+        {
+            sb.Append(text, pos, span.Start - pos);
+            pos = span.End;
+        }
+
+        sb.Append(text, pos, text.Length - pos);
+        return sb.ToString();
     }
 
     private static bool IsSurvivor(in SyntaxTrivia trivia)

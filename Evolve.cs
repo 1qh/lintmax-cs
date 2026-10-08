@@ -53,7 +53,7 @@ internal static class Evolve
     /// <summary>
     /// Returns every DIRECT dependency that lags its latest stable release, as "id current -&gt; latest".
     /// Empty when all deps are current. Gates the build (Latest-only; parity with lintmax-go's staleness scan).
-    /// Honors <c>LINTMAX_SKIP_STALENESS</c>. Result is TTL-cached locally so upstream is re-queried at
+    /// Honors the LINTMAX_SKIP_STALENESS variable. Result is TTL-cached locally so upstream is re-queried at
     /// most every few hours; CI always re-scans.
     /// </summary>
     /// <param name="root">Target directory.</param>
@@ -93,7 +93,8 @@ internal static class Evolve
             stale.AddRange(ParseStale(json).Where(seen.Add));
         }
 
-        await WriteStaleCacheAsync(root, manifestKey, stale, token).ConfigureAwait(false);
+        var cacheBody = StaleCacheBody(root, manifestKey, stale);
+        await File.WriteAllTextAsync(StaleCachePath(root), cacheBody, token).ConfigureAwait(false);
         return stale;
     }
 
@@ -253,15 +254,9 @@ internal static class Evolve
         && TimeProvider.System.GetUtcNow() - new DateTimeOffset(stampTicks, TimeSpan.Zero)
             <= StalenessTtl;
 
-    private static Task WriteStaleCacheAsync(
-        string root,
-        string manifestKey,
-        IReadOnlyList<string> stale,
-        CancellationToken token
-    )
+    private static string StaleCacheBody(string root, string manifestKey, IReadOnlyList<string> stale)
     {
-        var path = StaleCachePath(root);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(StaleCachePath(root))!);
         var body = new StringBuilder()
             .AppendLine(manifestKey)
             .AppendLine(
@@ -272,7 +267,7 @@ internal static class Evolve
             body.AppendLine(s);
         }
 
-        return File.WriteAllTextAsync(path, body.ToString(), token);
+        return body.ToString();
     }
 
     private static bool Flag(string name)
@@ -281,44 +276,38 @@ internal static class Evolve
         return !string.IsNullOrEmpty(value) && !string.Equals(value, "0", StringComparison.Ordinal);
     }
 
-    private static Task<(int Code, string Output)> ShAsync(
+    private static async Task<(int Code, string Output)> ShAsync(
         string exe,
         string args,
         CancellationToken token
     )
     {
-        ArgumentNullException.ThrowIfNull(exe);
-        return CoreAsync();
-
-        async Task<(int Code, string Output)> CoreAsync()
+        var psi = new ProcessStartInfo(exe, args)
         {
-            var psi = new ProcessStartInfo(exe, args)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            try
-            {
-                using var p = Process.Start(psi)!;
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        try
+        {
+            using var p = Process.Start(psi)!;
 
-                // reason: drain stderr concurrently even though only stdout is used — an undrained redirected stderr deadlocks the child once its pipe buffer fills.
-                var outTask = p.StandardOutput.ReadToEndAsync(token);
-                var errTask = p.StandardError.ReadToEndAsync(token);
-                var stdout = await outTask.ConfigureAwait(false);
-                _ = await errTask.ConfigureAwait(false);
-                await p.WaitForExitAsync(token).ConfigureAwait(false);
-                return (p.ExitCode, stdout);
-            }
-            catch (Exception e)
-                when (e
-                        is System.ComponentModel.Win32Exception
-                            or InvalidOperationException
-                            or IOException
-                )
-            {
-                return (-1, e.ToString());
-            }
+            // reason: drain stderr concurrently even though only stdout is used — an undrained redirected stderr deadlocks the child once its pipe buffer fills.
+            var outTask = p.StandardOutput.ReadToEndAsync(token);
+            var errTask = p.StandardError.ReadToEndAsync(token);
+            var stdout = await outTask.ConfigureAwait(false);
+            _ = await errTask.ConfigureAwait(false);
+            await p.WaitForExitAsync(token).ConfigureAwait(false);
+            return (p.ExitCode, stdout);
+        }
+        catch (Exception e)
+            when (e
+                    is System.ComponentModel.Win32Exception
+                        or InvalidOperationException
+                        or IOException
+            )
+        {
+            return (-1, e.ToString());
         }
     }
 }

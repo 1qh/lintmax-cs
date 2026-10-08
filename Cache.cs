@@ -64,16 +64,14 @@ internal static class Cache
             : null;
     }
 
-    /// <summary>Records <paramref name="hash"/> as the green state for <paramref name="root"/>.</summary>
+    /// <summary>Returns the file that records the green state for <paramref name="root"/>, creating its directory.</summary>
     /// <param name="root">Target directory.</param>
-    /// <param name="hash">The green tree hash.</param>
-    /// <param name="token">Cancellation token.</param>
-    /// <returns>A task.</returns>
-    internal static Task StoreGreenAsync(string root, string hash, CancellationToken token)
+    /// <returns>The green-state file path.</returns>
+    internal static string GreenPath(string root)
     {
         var path = CachePath(root);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        return File.WriteAllTextAsync(path, hash, token);
+        return path;
     }
 
     private static bool IsTracked(string f)

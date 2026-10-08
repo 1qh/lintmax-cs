@@ -57,7 +57,8 @@ internal static class Dprint
                 .ConfigureAwait(false);
         }
 
-        await StampAsync(configPath, token).ConfigureAwait(false);
+        var now = TimeProvider.System.GetUtcNow().UtcTicks.ToString(CultureInfo.InvariantCulture);
+        await File.WriteAllTextAsync(PreparedStampPath(configPath), now, token).ConfigureAwait(false);
     }
 
     private static async Task<string> RewriteAsync(string line, CancellationToken token)
@@ -160,14 +161,10 @@ internal static class Dprint
             && TimeProvider.System.GetUtcNow() - new DateTimeOffset(ticks, TimeSpan.Zero) <= BumpTtl;
     }
 
-    private static Task StampAsync(string configPath, CancellationToken token)
+    private static string PreparedStampPath(string configPath)
     {
         var path = StampPath(configPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        return File.WriteAllTextAsync(
-            path,
-            TimeProvider.System.GetUtcNow().UtcTicks.ToString(CultureInfo.InvariantCulture),
-            token
-        );
+        return path;
     }
 }

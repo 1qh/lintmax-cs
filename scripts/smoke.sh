@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Smoke-tests the four commands' dispatch + exit-code contract.
-tool="${1:-dotnet bin/Release/net10.0/lintmax-cs.dll}"
+tool="${1:-dotnet ${PWD}/bin/Release/net10.0/lintmax-cs.dll}"
 fail=0
 
 ver="$(${tool} version)"
@@ -21,6 +21,17 @@ fi
 rules_count="$(${tool} rules 2> /dev/null | wc -l | tr -d ' ')"
 if [[ ${rules_count} -lt 100 ]]; then
   echo "FAIL rules: expected >=100 got ${rules_count}" >&2
+  fail=1
+fi
+
+# The formatter stage must judge the PROJECT: dprint resolves its config's includes against the
+# config's own directory, so a gate that names no root silently formats nothing.
+proj="$(mktemp -d)"
+trap 'rm -rf "${proj}"' EXIT
+printf '{"a":1,   "b":2}\n' > "${proj}/unformatted.json"
+out="$(cd "${proj}" && ${tool} check 2>&1 || true)"
+if ! printf '%s' "${out}" | grep -q 'unformatted.json'; then
+  echo "FAIL dprint-scope: an unformatted project file was not reported" >&2
   fail=1
 fi
 
