@@ -51,7 +51,7 @@ internal static class Transform
         CancellationToken token
     )
     {
-        var offenders = new List<string>();
+        List<string> offenders = [];
         foreach (var file in await CsFilesAsync(root, token).ConfigureAwait(false))
         {
             var original = await File.ReadAllTextAsync(file, token).ConfigureAwait(false);
@@ -79,7 +79,7 @@ internal static class Transform
         CancellationToken token
     )
     {
-        var bad = new List<string>();
+        List<string> bad = [];
         foreach (
             var file in (await VersionControl.FilesAsync(root, "*.*", token).ConfigureAwait(false))
                 .Where(IsXml)
@@ -126,7 +126,7 @@ internal static class Transform
     {
         var tree = CSharpSyntaxTree.ParseText(text, cancellationToken: token);
         var root = await tree.GetRootAsync(token).ConfigureAwait(false);
-        var kill = new List<TextSpan>();
+        List<TextSpan> kill = [];
         foreach (var trivia in root.DescendantTrivia())
         {
             var kind = trivia.Kind();

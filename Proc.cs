@@ -25,7 +25,7 @@ internal static class Proc
             ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(
                 ';',
                 StringSplitOptions.RemoveEmptyEntries
-            )
+                )
             : [string.Empty];
         var dirs = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(
             Path.PathSeparator,

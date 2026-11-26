@@ -204,8 +204,10 @@ internal static class Gate
     }
 
     private static async Task<string[]> ProjectFilesAsync(string root, CancellationToken token) =>
-        [.. (await VersionControl.FilesAsync(root, "*.csproj", token).ConfigureAwait(false))
-            .Where(static f => !PathUtil.IsExcluded(f))];
+        [
+            .. (await VersionControl.FilesAsync(root, "*.csproj", token).ConfigureAwait(false))
+                .Where(static f => !PathUtil.IsExcluded(f)),
+        ];
 
     private static async Task<bool> RunLintersAsync(
         string root,

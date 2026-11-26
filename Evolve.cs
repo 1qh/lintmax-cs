@@ -20,12 +20,9 @@ internal static class Evolve
     private static readonly TimeSpan StalenessTtl = TimeSpan.FromHours(StalenessTtlHours);
 
     private static readonly HashSet<string> ManifestExtensions = new HashSet<string>(
+        [".csproj", ".props"],
         StringComparer.Ordinal
-    )
-    {
-        ".csproj",
-        ".props",
-    };
+    );
 
     /// <summary>Gets a value indicating whether the tool runs under CI.</summary>
     internal static bool IsCi => Flag("CI") || Flag("GITHUB_ACTIONS");
@@ -81,7 +78,7 @@ internal static class Evolve
 
         // reason: scan PER-PROJECT not `dotnet list <dir>` (dir form self-restores + reads-stale, giving 0 projects/false-stale); prerelease excluded so only latest STABLE gates.
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var stale = new List<string>();
+        List<string> stale = [];
         var mirror = await VersionControl.MirrorAsync(root, files: null, token).ConfigureAwait(false);
         try
         {
@@ -164,7 +161,7 @@ internal static class Evolve
             ),
             StringComparer.OrdinalIgnoreCase
         );
-        var stale = new List<string>();
+        List<string> stale = [];
         foreach (var pkg in TopLevelPackages(projects))
         {
             if (allowed.Contains(Str(pkg, "id")))
@@ -222,9 +219,7 @@ internal static class Evolve
         var id = Str(pkg, "id");
         var resolved = Str(pkg, "resolvedVersion");
         var latest = Str(pkg, "latestVersion");
-        return latest.Length > 0
-            && resolved.Length > 0
-            && !string.Equals(latest, resolved, StringComparison.Ordinal)
+        return latest.Length > 0 && resolved.Length > 0 && !string.Equals(latest, resolved, StringComparison.Ordinal)
             ? $"{id} {resolved} -> {latest}"
             : null;
     }

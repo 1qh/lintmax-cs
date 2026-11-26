@@ -11,21 +11,21 @@ namespace LintmaxCs;
 internal static class Cache
 {
     private static readonly HashSet<string> TrackedExtensions = new HashSet<string>(
+        [
+            ".cs",
+            ".csproj",
+            ".xaml",
+            ".json",
+            ".md",
+            ".toml",
+            ".yml",
+            ".yaml",
+            ".sh",
+            ".props",
+            ".targets",
+        ],
         StringComparer.Ordinal
-    )
-    {
-        ".cs",
-        ".csproj",
-        ".xaml",
-        ".json",
-        ".md",
-        ".toml",
-        ".yml",
-        ".yaml",
-        ".sh",
-        ".props",
-        ".targets",
-    };
+    );
 
     /// <summary>Computes a hash over hand-written source + the gate config.</summary>
     /// <param name="root">Target directory.</param>

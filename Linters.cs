@@ -81,7 +81,7 @@ internal static class Linters
         var mirror = await VersionControl.MirrorAsync(root, files, token).ConfigureAwait(false);
         try
         {
-            var tasks = new List<Task<(int Code, string Output)>>();
+            List<Task<(int Code, string Output)>> tasks = [];
             foreach (var (exe, args) in Applicable(mirror, dprintConfig, fix: false))
             {
                 tasks.Add(Proc.RunAsync(exe, args, mirror, token));
@@ -202,27 +202,29 @@ internal static class Linters
         var docker = files
             .Where(static f => Path.GetFileName(f).StartsWith("Dockerfile", StringComparison.Ordinal))
             .ToArray();
-        var conditional = ScriptTools(files, fix).Concat(new (bool Active, string Exe, string[] Args)[]
-        {
-            (workflows.Length > 0, "actionlint", ActionlintArgs(root, workflows)),
-            (
-                markdown.Length > 0,
-                "markdownlint-cli2",
-                fix
-                    ? [ConfigFlag, MarkdownConfig, "--fix", .. markdown]
-                    : [ConfigFlag, MarkdownConfig, .. markdown]
-            ),
-            (yaml.Length > 0, "yamllint", ["-c", YamlConfig, "--strict", .. yaml]),
-            (toml.Length > 0, "taplo", ["lint", .. toml]),
-            (docker.Length > 0, "hadolint", [.. HadolintFlags, .. docker]),
-            (
-                web.Length > 0,
-                "biome",
-                fix
-                    ? ["check", "--write", "--config-path", AssetsDir, .. web]
-                    : ["check", "--config-path", AssetsDir, .. web]
-            ),
-        });
+        var conditional = ScriptTools(files, fix).Concat(
+            new (bool Active, string Exe, string[] Args)[]
+            {
+                (workflows.Length > 0, "actionlint", ActionlintArgs(root, workflows)),
+                (
+                    markdown.Length > 0,
+                    "markdownlint-cli2",
+                    fix
+                        ? [ConfigFlag, MarkdownConfig, "--fix", .. markdown]
+                        : [ConfigFlag, MarkdownConfig, .. markdown]
+                ),
+                (yaml.Length > 0, "yamllint", ["-c", YamlConfig, "--strict", .. yaml]),
+                (toml.Length > 0, "taplo", ["lint", .. toml]),
+                (docker.Length > 0, "hadolint", [.. HadolintFlags, .. docker]),
+                (
+                    web.Length > 0,
+                    "biome",
+                    fix
+                        ? ["check", "--write", "--config-path", AssetsDir, .. web]
+                        : ["check", "--config-path", AssetsDir, .. web]
+                ),
+            }
+        );
         foreach (var (_, exe, args) in conditional.Where(static c => c.Active))
         {
             yield return (exe, args);
@@ -248,10 +250,12 @@ internal static class Linters
     }
 
     private static string[] WorkflowFiles(string root, IEnumerable<string> yaml) =>
-        [.. yaml.Where(f => Path.GetRelativePath(root, f)
-            .Replace('\\', '/')
-            .StartsWith(".github/workflows/", StringComparison.Ordinal)
-        )];
+        [
+            .. yaml.Where(f => Path.GetRelativePath(root, f)
+                .Replace('\\', '/')
+                .StartsWith(".github/workflows/", StringComparison.Ordinal)
+            ),
+        ];
 
     private static string[] PowerShellArgs(string[] powershell) =>
         [
@@ -364,11 +368,10 @@ internal static class Linters
         var file = Path.Combine(root, ".lintmaxignore");
         return !File.Exists(file)
             ? []
-            :
-            [
+            : [
                 .. File.ReadLines(file)
                     .Select(static l => l.Trim())
                     .Where(static l => l.Length > 0 && !l.StartsWith('#')),
-            ];
+                ];
     }
 }
