@@ -9,7 +9,7 @@ jobs:
   gate:
     runs-on: ${{ vars.RUNNER_LABEL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: resolve the .NET root the installed tool launches against
         run: |
           set -eu

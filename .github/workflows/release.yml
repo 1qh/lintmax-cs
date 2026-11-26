@@ -8,17 +8,18 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      NUGET_KEY: ${{ secrets.NUGET_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: pack
         run: dotnet pack -c Release -o out
       - name: push
-        env:
-          NUGET_KEY: ${{ secrets.NUGET_KEY }}
-        # publish is optional (operator-supplied NuGet key); when absent, skip — never abort the prune steps below
+        # A step's `if` cannot read that step's own `env`, so the key is set on the job: set there, it is
+        # visible here and pushes; absent, the step skips and the prune steps below still run.
         if: ${{ env.NUGET_KEY != '' }}
         run: dotnet nuget push "out/*.nupkg" -k "$NUGET_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate
       - name: prune releases
