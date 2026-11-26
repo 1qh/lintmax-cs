@@ -3,3 +3,4 @@ obj/
 pack/
 *.lintmaxbak
 Directory.Build.props
+.lane-*.md
